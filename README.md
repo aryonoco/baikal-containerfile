@@ -60,3 +60,15 @@ Settings changed through the admin UI persists.
 **Do not strip a path prefix** (sabre replies 403 "out of base uri"), and serve
 `/.well-known/caldav` and `/.well-known/carddav` as redirects to the DAV root
 `/dav.php/` with a **relative** target.
+
+## AI/LLM Disclosure
+
+This project was developed with significant LLM involvement. Each git commit contains an `Assisted-by:` tag detailing the particular model/tool used.
+
+## Licence
+
+Copyright 2026 Aryan Ameri.
+
+[BSD-2-Clause](LICENSES/BSD-2-Clause.txt)
+
+This project is [REUSE](https://reuse.software/) compliant.
