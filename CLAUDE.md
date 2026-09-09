@@ -56,8 +56,11 @@ breaking change.
   Caddy, and the entrypoint `pcntl_exec`s it so it inherits PID 1. A dead PHP kills
   the container. Do not add a supervisor, s6, or a second long-running process
 - **Nothing may add a shell or a package manager to the final image.** The base is
-  distroless; that is the point, and it is what removes apt patching from the
-  weekly rebuild entirely
+  distroless; that is the point. What it removes is us running apt, not the
+  patching itself - `cc-debian13` still ships libc6, libssl3t64, libstdc++6,
+  libgcc-s1, libgomp1, libzstd1 and zlib1g, all executable code that takes CVEs.
+  That obligation moves to the base image's own rebuilds, and the weekly
+  rebuild here is what collects them, by re-resolving the digest
 - **The binary must never carry a file capability.** The official FrankenPHP build
   carries `cap_net_bind_service=ep`, and a binary with a file capability cannot be
   exec'd at all under `--cap-drop ALL` — it dies with `Operation not permitted`
