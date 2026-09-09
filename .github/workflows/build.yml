@@ -221,10 +221,11 @@ jobs:
       # An OCI layout rather than a docker-format tarball, and that is the
       # whole reason the attestations below are possible: attestations attach
       # to an image index, and the docker exporter is the one exporter that
-      # cannot write an index. BuildKit's provenance and SBOM are the only ones
-      # that describe this build - mode=max records every argument, source and
-      # layer - and anything bolted on afterwards is reconstruction. Carrying
-      # them in the layout means keeping them without giving up build-once.
+      # cannot write an index. BuildKit's provenance is the only record of what
+      # actually went into this build - mode=max captures every argument,
+      # source and layer - and anything reconstructed after the fact is a
+      # guess. Carrying it in the layout keeps it without giving up
+      # build-once.
       #
       # The tag comes from the justfile so the suite and the build cannot
       # disagree about which image is under test.
@@ -416,8 +417,8 @@ jobs:
       #
       # skopeo rather than `docker load` and `docker push`, because that path
       # goes through the daemon's image store and drops the attestation
-      # manifests on the way. `--all` copies the layout's whole index -
-      # image plus provenance plus SBOM - byte for byte.
+      # manifests on the way. `--all` copies the layout's whole index - the
+      # image and everything attached to it - byte for byte.
       #
       # One tag per architecture, because no CLI here can push a manifest to a
       # registry without naming it; push-by-digest is a BuildKit exporter
