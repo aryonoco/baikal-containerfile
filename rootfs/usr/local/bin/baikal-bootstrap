@@ -1,0 +1,138 @@
+#!/usr/bin/env php
+<?php
+// SPDX-License-Identifier: BSD-2-Clause
+// SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
+
+// There is no shell in this image, so nothing can chain "bootstrap && serve".
+// This program does the bootstrap and then REPLACES ITSELF with the server via
+// pcntl_exec, so FrankenPHP inherits PID 1 and receives signals directly.
+// PHP rather than shell for the same reason it would be anyway: baikal.yaml is
+// YAML and symfony/yaml already ships in Baikal's vendor tree.
+
+require '/var/www/baikal/vendor/autoload.php';
+require '/var/www/baikal/Core/Distrib.php';   // defines BAIKAL_VERSION
+
+use Symfony\Component\Yaml\Yaml;
+
+const SERVER_BIN = '/usr/local/bin/frankenphp';
+const CADDYFILE  = '/etc/caddy/Caddyfile';
+
+function fail(string $msg): never {
+    fwrite(STDERR, "baikal-bootstrap: $msg\n");
+    exit(1);
+}
+
+function info(string $msg): void {
+    fwrite(STDOUT, "baikal-bootstrap: $msg\n");
+}
+
+function env(string $name, ?string $default = null): string {
+    $v = getenv($name);
+    if ($v === false || $v === '') {
+        if ($default === null) {
+            fail("$name is required and is not set");
+        }
+        return $default;
+    }
+    return $v;
+}
+
+$configDir   = rtrim(env('BAIKAL_PATH_CONFIG', '/data/config/'), '/') . '/';
+$specificDir = rtrim(env('BAIKAL_PATH_SPECIFIC', '/data/Specific/'), '/') . '/';
+$configFile  = $configDir . 'baikal.yaml';
+$dbFile      = $specificDir . 'db/db.sqlite';
+$installLock = $specificDir . 'INSTALL_DISABLED';
+
+foreach ([$configDir, $specificDir . 'db'] as $dir) {
+    if (!is_dir($dir) && !@mkdir($dir, 0o750, true)) {
+        fail("cannot create $dir - is the volume writable by uid " . getmyuid() . '?');
+    }
+}
+
+$haveConfig = file_exists($configFile);
+$haveDb     = file_exists($dbFile);
+
+// A database without its config is recoverable; a config without its database
+// is not, because auth_realm is baked into every stored password hash. Creating
+// an empty database here would produce a service that is up, healthy and empty,
+// which is strictly worse than one that refuses to start - and the next backup
+// would snapshot that over the last good copy.
+if ($haveConfig && !$haveDb) {
+    fail("$configFile exists but $dbFile does not. Refusing to create an empty "
+       . 'database beside an existing config: restore both together, they are '
+       . 'one unit.');
+}
+
+if (!$haveConfig) {
+    $password = env('BAIKAL_ADMIN_PASSWORD');   // no default: refuses if unset
+    $realm    = env('BAIKAL_AUTH_REALM', 'BaikalDAV');
+
+    $config = [
+        'system' => [
+            'configured_version'    => BAIKAL_VERSION,
+            'timezone'              => env('BAIKAL_TIMEZONE', 'UTC'),
+            'card_enabled'          => true,
+            'cal_enabled'           => true,
+            // Upstream defaults to Digest, which breaks Windows 10 clients,
+            // broke DAVx5 4.5.17, and is the one auth mode a path-rewriting
+            // proxy silently kills.
+            'dav_auth_type'         => env('BAIKAL_DAV_AUTH_TYPE', 'Basic'),
+            // sha256 of "admin:<realm>:<password>", username the literal string
+            // admin. DAV users use md5 into users.digesta1 - a different scheme
+            // entirely, managed through the admin UI.
+            'admin_passwordhash'    => hash('sha256', 'admin:' . $realm . ':' . $password),
+            'failed_access_message' => 'user %u authentication failure for Baikal',
+            'auth_realm'            => $realm,
+            // Empty so it is derived from the request. Setting it is for
+            // sub-path mounting and is widely broken behind reverse proxies.
+            'base_uri'              => '',
+            // Baikal registers its iMIP mail plugin - its only outbound traffic
+            // - if and only if this is non-empty, and it is non-empty in both
+            // the shipped config and the installer default. Empty is what lets
+            // the deployment deny all egress.
+            'invite_from'           => getenv('BAIKAL_INVITE_FROM') ?: '',
+        ],
+        'database' => [
+            'backend'        => 'sqlite',
+            'sqlite_file'    => $dbFile,
+            // Vestigial: a leftover from the legacy config.system.php that
+            // nothing now consumes.
+            'encryption_key' => '',
+        ],
+    ];
+
+    file_put_contents($configFile, Yaml::dump($config, 4, 4));
+    // Must stay writable on every request, not merely at install:
+    // Tools::assertBaikalIsOk() checks it and Baikal refuses to serve without it.
+    chmod($configFile, 0o640);
+    info("wrote $configFile");
+}
+
+if (!$haveDb) {
+    $schema = '/var/www/baikal/Core/Resources/Db/SQLite/db.sql';
+    if (!is_readable($schema)) {
+        fail("schema $schema is missing from the image");
+    }
+    $pdo = new PDO('sqlite:' . $dbFile, null, null, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    ]);
+    $pdo->exec(file_get_contents($schema));
+    unset($pdo);
+    chmod($dbFile, 0o640);
+    info("created $dbFile");
+}
+
+// Its absence re-opens the unauthenticated /admin/install/ database wizard, so
+// this is security state, not a convenience marker.
+if (!file_exists($installLock)) {
+    touch($installLock);
+    info("wrote $installLock");
+}
+
+info('ready, Baikal ' . BAIKAL_VERSION);
+
+// Replace this process with the server. Not a fork: pcntl_exec overlays the
+// process image, so FrankenPHP becomes PID 1 and gets SIGTERM directly. No
+// supervisor, no signal-forwarding wrapper, nothing left behind to reap.
+pcntl_exec(SERVER_BIN, ['run', '--config', CADDYFILE]);
+fail('pcntl_exec failed to start ' . SERVER_BIN);

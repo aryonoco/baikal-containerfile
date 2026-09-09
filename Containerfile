@@ -66,7 +66,8 @@ ENV BAIKAL_PATH_CONFIG=/data/config/ \
     XDG_DATA_HOME=/tmp \
     XDG_CONFIG_HOME=/tmp
 
+COPY --chown=root:root --chmod=0755 rootfs/usr/local/bin/baikal-bootstrap /usr/local/bin/baikal-bootstrap
+
 EXPOSE 8080
 USER 65532:65532
-ENTRYPOINT ["/usr/local/bin/frankenphp"]
-CMD ["run", "--config", "/etc/caddy/Caddyfile"]
+ENTRYPOINT ["/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-bootstrap"]
