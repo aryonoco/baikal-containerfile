@@ -164,13 +164,9 @@ assert_status 201 'PUT event' -u "${DAV_USER}:${DAV_PASS}" \
     -X PUT -H 'Content-Type: text/calendar' --data-binary "${EVENT}" \
     "${BASE}/dav.php/calendars/${DAV_USER}/test/accept-1.ics"
 
-if curl -s --connect-timeout 5 --max-time 30 -u "${DAV_USER}:${DAV_PASS}" \
-     "${BASE}/dav.php/calendars/${DAV_USER}/test/accept-1.ics" \
-     | grep -q 'SUMMARY:acceptance'; then
-    pass 'GET event round-trips'
-else
-    fail 'GET event did not return what was PUT'
-fi
+assert_contains 'SUMMARY:acceptance' 'GET event round-trips' \
+    curl -s --connect-timeout 5 --max-time 30 -u "${DAV_USER}:${DAV_PASS}" \
+    "${BASE}/dav.php/calendars/${DAV_USER}/test/accept-1.ics"
 
 assert_status 207 'REPORT sync-collection' -u "${DAV_USER}:${DAV_PASS}" \
     -X REPORT -H 'Depth: 1' -H 'Content-Type: application/xml' \
@@ -229,13 +225,9 @@ echo '== 10. warm restart preserves data'
 "${ENGINE}" restart baikal-acc >/dev/null
 wait_for_port "${BASE}/dav.php" || fail 'did not come back'
 assert_status 401 '/dav.php after restart' "${BASE}/dav.php"
-if curl -s --connect-timeout 5 --max-time 30 -u "${DAV_USER}:${DAV_PASS}" \
-     "${BASE}/dav.php/calendars/${DAV_USER}/test/accept-1.ics" \
-     | grep -q 'SUMMARY:acceptance'; then
-    pass 'event survived restart'
-else
-    fail 'event lost across restart'
-fi
+assert_contains 'SUMMARY:acceptance' 'event survived restart' \
+    curl -s --connect-timeout 5 --max-time 30 -u "${DAV_USER}:${DAV_PASS}" \
+    "${BASE}/dav.php/calendars/${DAV_USER}/test/accept-1.ics"
 
 echo '== 11. version drift is cleared, never served as a 302'
 # Age the config in the volume while the container that owns it is still up -
@@ -247,11 +239,8 @@ probe baikal-acc set-version 0.10.1
 start
 wait_for_port "${BASE}/dav.php" || fail 'did not start after drift'
 assert_status 401 '/dav.php after version drift' "${BASE}/dav.php"
-if "${ENGINE}" logs baikal-acc 2>&1 | grep -q 'cleared version drift: 0.10.1'; then
-    pass 'drift was cleared'
-else
-    fail 'no drift-cleared log line'
-fi
+assert_contains 'cleared version drift: 0.10.1' 'drift was cleared' \
+    "${ENGINE}" logs baikal-acc
 
 echo '== 12. failure rules refuse rather than serve'
 probe baikal-acc remove-db

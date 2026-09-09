@@ -71,6 +71,54 @@ assert_status() {
     assert_eq "${expected}" "${actual}" "${what}"
 }
 
+# Assert that a command's output contains a fixed string.
+#
+# Do not fold this back into `producer | grep -q needle`, however much shorter
+# that reads. This suite runs under `set -o pipefail`, and `grep -q` stops
+# reading the instant it matches: the producer is then killed by SIGPIPE, exits
+# 141, and pipefail hands that 141 up as the pipeline's status - so the check
+# fails *because* the needle turned up early, in a log the needle was in all
+# along. Whether it fails at all turns on whether the producer had finished
+# writing before grep stopped reading, so it fails at the rate the producer's
+# tail happens to be slow and looks for all the world like a flush race in the
+# thing being read.
+#
+# Measured rather than reasoned about, because the reasoning had already gone
+# wrong once: `${ENGINE} logs | grep -q` for the drift line - the first line of
+# a ~16kB log, with the whole of Caddy's startup still to be written after it -
+# failed 19 times in 200 against a container whose log held the line on every
+# one of the 200.
+#
+# So the output is captured whole and matched afterwards, and the producer's
+# own exit status is read instead of being discarded, because "the output does
+# not contain this" and "the producer failed" are different defects and the
+# pipeline form reported both as the first. The output is printed on either,
+# since a check that goes red about something a container produced has to be
+# diagnosable from the CI log alone.
+assert_contains() {
+    local needle="${1}" what="${2}"
+    shift 2
+    local output rc
+    output=$("${@}" 2>&1)
+    rc=$?
+
+    if (( rc != 0 )); then
+        fail "${what}: ${1} exited ${rc}"
+        printf '%s\n' "${output}" >&2
+        return
+    fi
+
+    # The needle is quoted inside the pattern, so only the two `*` are globs and
+    # the needle itself is matched literally. Unquoting it would silently turn a
+    # needle containing [ ? * into a glob against the whole output.
+    if [[ "${output}" == *"${needle}"* ]]; then
+        pass "${what}"
+    else
+        fail "${what}: output contains no '${needle}'"
+        printf '%s\n' "${output}" >&2
+    fi
+}
+
 # How long wait_for_port waits for anything at all to answer. 60s is what it
 # waited before http_status grew a deadline, and wall-clock is the way to keep
 # it there: an attempt costs anything from milliseconds (connection refused, the
