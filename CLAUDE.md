@@ -37,9 +37,9 @@ breaking change.
 |---|---|
 | Capabilities | **none** (`--cap-drop ALL`) |
 | Root filesystem | **read-only** |
-| User | uid/gid **33**, never root |
+| User | uid/gid **65532**, never root |
 | Listen port | **8080** — never 80 |
-| tmpfs required | exactly two: `/run`, `/tmp` |
+| tmpfs required | exactly one: `/tmp` |
 | Volume required | exactly one: `/data` |
 | Outbound network | **none** |
 | Healthy | `GET /dav.php` returns **exactly 401** |
@@ -52,8 +52,16 @@ breaking change.
   framework concatenates them directly with `baikal.yaml` and `db/db.sqlite`
   (`Core/Frameworks/Flake/Framework.php:168-182`). A missing slash yields
   `/data/configbaikal.yaml` and a container that boots into the install wizard
-- **One process tree, always.** Apache with mod_php is the design: 
-  A dead PHP kills the container. Do not add a supervisor, s6, or a second long-running process.
+- **One process tree, always.** FrankenPHP is a single binary containing PHP and
+  Caddy, and the entrypoint `pcntl_exec`s it so it inherits PID 1. A dead PHP kills
+  the container. Do not add a supervisor, s6, or a second long-running process
+- **Nothing may add a shell or a package manager to the final image.** The base is
+  distroless; that is the point, and it is what removes apt patching from the
+  weekly rebuild entirely
+- **The binary must never carry a file capability.** The official FrankenPHP build
+  carries `cap_net_bind_service=ep`, and a binary with a file capability cannot be
+  exec'd at all under `--cap-drop ALL` — it dies with `Operation not permitted`
+  and exit 126 before PHP starts
 - **Never serve the `302 → /admin/install/` state.** On version drift the
   container clears it or refuses to start. Serving it is a total CalDAV outage
   that every client reports as an auth or sync failure
@@ -91,13 +99,9 @@ breaking change.
 
 ## Code quality
 
-- All linter gates are enforced as errors — fix them, don't suppress them. The one
-  documented exception is hadolint's DL3008 (pin apt package versions) on
-  `apt-get install` lines for packages that never reach the final image: Debian's
-  archive drops superseded builds once a security update lands, so a pin here has
-  no update path and would eventually 404 the weekly rebuild it exists to keep
-  green. Any other suppression, anywhere, needs the same kind of explicit,
-  comment-level justification beside it to be accepted
+- All linter gates are enforced as errors — fix them, don't suppress them. Any
+  suppression, anywhere, needs an explicit, comment-level justification beside
+  it to be accepted
 - REUSE-compliant SPDX headers on every file; licence is **BSD-2-Clause**
 - The acceptance suite runs the image under the *exact* confinement the contract
   claims, so a check can never pass under looser settings than we ship. What CI

@@ -10,7 +10,9 @@ Published as `ghcr.io/aryonoco/baikal`.
 
 ## Why this exists
 
-This image uses Apache with mod_php. If PHP fails, the container exits.
+This image runs [FrankenPHP](https://github.com/php/frankenphp): PHP 8.5 and Caddy
+in a single mostly-static binary, on a distroless base. One process, so a dead PHP
+kills the container. No shell and no package manager in the image at all.
 
 ## Container Layout
 
@@ -18,12 +20,14 @@ This image uses Apache with mod_php. If PHP fails, the container exits.
 |---|---|
 | Capabilities | none (`--cap-drop ALL`) |
 | Root filesystem | read-only |
-| User | uid/gid 33 |
+| User | uid/gid 65532 (`nonroot`) |
 | Port | 8080 |
-| tmpfs required | `/run`, `/tmp` |
+| tmpfs required | `/tmp` |
 | Volume required | `/data` |
+| Shell in image | none |
+| Package manager | none |
 | Outbound network | none |
-| Healthy | `GET /dav.php` returns 401 |
+| Healthy | `GET /dav.php` returns **exactly 401** |
 
 **Health check must assert 401.** Every Baikal failure mode (unwritable config, missing database, unwritable database directory) returns **200** with an exception page, so `curl --fail` reports a dead server as healthy.
 
@@ -32,8 +36,8 @@ This image uses Apache with mod_php. If PHP fails, the container exits.
 ```bash
 podman run -d --name baikal \
   --cap-drop ALL --read-only \
-  --user 33:33 \
-  --tmpfs /run --tmpfs /tmp \
+  --user 65532:65532 \
+  --tmpfs /tmp \
   -v baikal-data:/data \
   -p 8080:8080 \
   -e BAIKAL_ADMIN_PASSWORD=... \
