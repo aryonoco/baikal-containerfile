@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
+
+# The single source of truth for every tool version this repository uses. The
+# justfile runs its recipes through `mise exec`, and CI installs from this file
+# and nothing else, so no gate can quietly resolve to whichever build of a
+# linter a machine happened to have on PATH.
+#
+# PHP is the one deliberate exception, and composer.lock pins PHPStan instead.
+# See CLAUDE.md, "Where the toolchain comes from", for why.
+
+[tools]
+# Backends are named explicitly rather than relying on the registry's short
+# names: the registry is free to change which backend a short name resolves to,
+# and this file is supposed to say exactly what gets installed.
+"aqua:hadolint/hadolint" = "2.15.1"
+"aqua:koalaman/shellcheck" = "0.11.0"
+"pipx:reuse" = "6.2.0"
+
+# `reuse` is not in mise's registry at all, so the pipx backend above is not a
+# preference - it is the only way to name it.
+
+# just runs the gates, so it is pinned like the gates are. Without this a CI
+# runner would take whatever `just` its image ships, and a recipe syntax added
+# after that version would fail there and nowhere else.
+"aqua:casey/just" = "1.58.0"
+
+# Pinned but not yet invoked by any recipe: the workflow gates that use them
+# arrive with the CI pipeline. They are here so this file is the whole picture
+# of what the repository's tooling is, rather than the part of it wired up so
+# far.
+"aqua:aquasecurity/trivy" = "0.74.0"
+"aqua:suzuki-shunsuke/pinact" = "4.1.1"
+"aqua:zizmorcore/zizmor" = "1.30.0"
