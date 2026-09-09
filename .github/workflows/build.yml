@@ -113,8 +113,10 @@ jobs:
     # 26.04 rather than 24.04, and the reason is podman, not novelty: 24.04
     # carries podman 4.9.3 while the deployment target runs 5.4.2, so the
     # dual-engine leg there would be proving something about an engine a whole
-    # major version away from the one this estate runs. 26.04 carries 5.7.0.
-    # Both 26.04 images are marked preview; that is accepted knowingly.
+    # major version away from the one this estate runs. 26.04 carries 5.7.0 -
+    # three minors ahead of the target rather than equal to it, which is the
+    # closer of the two options available and not a match. Both 26.04 images
+    # are marked preview; that is accepted knowingly.
     strategy:
       fail-fast: false
       matrix:
