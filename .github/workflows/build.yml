@@ -128,7 +128,20 @@ jobs:
       # For `just`, which owns the image's tag.
       - uses: jdx/mise-action@v4
 
+      # A docker-container builder, which the oci exporter below requires: the
+      # default docker driver cannot write an image index.
       - uses: docker/setup-buildx-action@v4
+
+      # Tidiness, not reproducibility. A from-source PHP compile is not
+      # bit-reproducible and this does not make it one; do not describe it as
+      # if it did. What it buys is that two builds of a commit differ only
+      # where they genuinely differ rather than in what the clock said, which
+      # keeps image history and index diffs readable and makes
+      # org.opencontainers.image.created mean something instead of recording
+      # when a runner happened to be scheduled. Buildx reads SOURCE_DATE_EPOCH
+      # out of the environment by itself.
+      - name: Pin the build clock to the commit
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "${GITHUB_ENV}"
 
       # Keyed on the Containerfile, because everything that makes this build
       # expensive is declared there - the extension list, the builder image
@@ -148,10 +161,18 @@ jobs:
           key: buildx-${{ matrix.arch }}-${{ hashFiles('Containerfile') }}
           restore-keys: buildx-${{ matrix.arch }}-
 
-      # Exported as a tarball rather than pushed, because this runs on every
-      # pull request including forks, where there is no registry credential and
-      # must not be one. The tarball is what the engine legs load and what the
-      # publish job eventually pushes, so no image is ever built twice.
+      # Exported to a file rather than pushed, because this runs on every pull
+      # request including forks, where there is no registry credential and must
+      # not be one. That file is what the engine legs load and what the publish
+      # job pushes, so no image is ever built twice.
+      #
+      # An OCI layout rather than a docker-format tarball, and that is the
+      # whole reason the attestations below are possible: attestations attach
+      # to an image index, and the docker exporter is the one exporter that
+      # cannot write an index. BuildKit's provenance and SBOM are the only ones
+      # that describe this build - mode=max records every argument, source and
+      # layer - and anything bolted on afterwards is reconstruction. Carrying
+      # them in the layout means keeping them without giving up build-once.
       #
       # The tag comes from the justfile so the suite and the build cannot
       # disagree about which image is under test.
@@ -161,7 +182,9 @@ jobs:
           docker buildx build \
             --cache-from type=local,src=/tmp/.buildx-cache \
             --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
-            --output type=docker,dest=/tmp/image.tar \
+            --attest type=provenance,mode=max \
+            --attest type=sbom \
+            --output type=oci,dest=/tmp/image.tar,rewrite-timestamp=true \
             -f Containerfile -t "${image}" .
           # buildx's local cache exporter appends rather than replaces, so
           # without this swap the directory grows every run until it is too
@@ -215,17 +238,29 @@ jobs:
           name: image-${{ matrix.arch }}
           path: /tmp
 
-      # `load` reads a docker-archive on both engines, so the two legs differ
-      # in nothing but which binary is asked. The inspect afterwards is not
-      # ceremony: it is the guard against an engine reading the archive's
-      # RepoTags differently, which would otherwise surface much later as the
-      # suite failing to find an image it was told exists.
+      # skopeo rather than each engine's own `load`, because the archive is an
+      # OCI layout carrying attestation manifests beside the image, and skopeo
+      # is the tool on the runner that reads that shape into either engine's
+      # store. Its default --multi-arch=system takes the image manifest and
+      # leaves the unknown/unknown attestation manifest where it is, which is
+      # what an engine wants; the destination names the image outright, so
+      # nothing here depends on how an engine reads an archive's RepoTags.
+      #
+      # The inspect afterwards is not ceremony. It is the guard against the
+      # copy landing under a name the suite will not find, which would
+      # otherwise surface much later as a container that "does not exist".
       - name: Load the image under test
         env:
           ENGINE: ${{ matrix.engine }}
         run: |
           image=$(just --evaluate IMAGE)
-          "${ENGINE}" load -i /tmp/image.tar
+          case "${ENGINE}" in
+            docker) dest="docker-daemon:${image}" ;;
+            podman) dest="containers-storage:${image}" ;;
+            *) echo "unknown engine ${ENGINE}" >&2; exit 1 ;;
+          esac
+          skopeo --version
+          skopeo copy "oci-archive:/tmp/image.tar" "${dest}"
           "${ENGINE}" image inspect "${image}" >/dev/null
           "${ENGINE}" --version
 
@@ -264,10 +299,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: jdx/mise-action@v4
-
       # For the imagetools plugin that merges the two architectures, not for a
-      # builder: nothing is built in this job, by design.
+      # builder: nothing is built in this job, by design. No mise here either -
+      # this job runs no justfile recipe, only registry plumbing.
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4
@@ -298,57 +332,83 @@ jobs:
           fi
           echo "baikal=${v}" >> "${GITHUB_OUTPUT}"
 
-      # The tarballs the suite passed against, pushed unchanged. Nothing is
+      # The layouts the suite passed against, pushed unchanged. Nothing is
       # rebuilt here, which is the whole point: a from-source PHP build is not
       # bit-reproducible, so a publish that rebuilt would ship an image no test
       # had ever seen.
       #
-      # One tag per architecture, because the docker CLI cannot push a local
-      # image without naming it. They are not scaffolding to be tidied away
-      # later - they are the addressable halves the index below points at, and
-      # they are useful on their own to anyone debugging one architecture.
+      # skopeo rather than `docker load` and `docker push`, because that path
+      # goes through the daemon's image store and drops the attestation
+      # manifests on the way. `--all` copies the layout's whole index -
+      # image plus provenance plus SBOM - byte for byte.
       #
-      # Loaded one at a time: both archives carry the same local tag, so
-      # loading both before tagging either would leave the first image
-      # reachable only by ID.
+      # One tag per architecture, because no CLI here can push a manifest to a
+      # registry without naming it; push-by-digest is a BuildKit exporter
+      # feature and reaching it would mean handing a registry credential to a
+      # job that builds fork pull requests. These tags are not scaffolding to
+      # be tidied away - they are the addressable halves the index points at,
+      # and they are useful to anyone debugging one architecture.
       - name: Push each tested architecture
         env:
           VERSION: ${{ steps.version.outputs.baikal }}
         run: |
-          image=$(just --evaluate IMAGE)
           for arch in amd64 arm64; do
-            docker load -i "/tmp/images/image-${arch}/image.tar"
-            docker tag "${image}" "ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
-            docker push "ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
+            skopeo copy --all \
+              --dest-authfile "${HOME}/.docker/config.json" \
+              "oci-archive:/tmp/images/image-${arch}/image.tar" \
+              "docker://ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
           done
 
-      # The multi-architecture index, assembled from digests that exist in the
-      # registry because they passed. imagetools copies manifests rather than
-      # rebuilding, so :latest and :<version> resolve to exactly the two images
-      # above.
+      # The multi-architecture index, assembled from manifests that are in the
+      # registry because they passed. imagetools copies rather than rebuilds,
+      # so :latest and :<version> resolve to exactly the two images above and
+      # to the attestation manifests that came with them.
+      #
+      # version, revision and created live here rather than as labels in the
+      # Containerfile: set once on the index, they cannot end up saying
+      # different things on the two architectures. created comes from the
+      # commit for the same reason SOURCE_DATE_EPOCH does - a wall clock would
+      # make two publishes of one commit differ for no reason.
+      #
+      # --metadata-file rather than scraping `imagetools inspect`: the digest
+      # is a first-class output, and taking it here saves a round-trip to the
+      # registry to ask what we just wrote.
       - name: Merge the architectures into one index
         id: merge
         env:
           VERSION: ${{ steps.version.outputs.baikal }}
         run: |
+          created=$(date -u -d "@$(git log -1 --pretty=%ct)" +%Y-%m-%dT%H:%M:%SZ)
           docker buildx imagetools create \
+            --metadata-file /tmp/index.json \
+            --annotation "index:org.opencontainers.image.version=${VERSION}" \
+            --annotation "index:org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --annotation "index:org.opencontainers.image.created=${created}" \
             -t "ghcr.io/aryonoco/baikal:${VERSION}" \
             -t "ghcr.io/aryonoco/baikal:latest" \
             "ghcr.io/aryonoco/baikal:${VERSION}-amd64" \
             "ghcr.io/aryonoco/baikal:${VERSION}-arm64"
-          digest=$(docker buildx imagetools inspect \
-            "ghcr.io/aryonoco/baikal:${VERSION}" --format '{{.Manifest.Digest}}')
-          case "${digest}" in
-            sha256:*) ;;
-            *) echo "imagetools returned no index digest: '${digest}'" >&2; exit 1 ;;
-          esac
+          digest=$(jq -er '."containerimage.descriptor".digest' /tmp/index.json)
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
 
-      # Signed by GitHub's Sigstore identity over the index, so it covers both
-      # architectures at once, and verifiable with `gh attestation verify
-      # --repo` without trusting the registry.
-      - uses: actions/attest-build-provenance@v4
+      # actions/attest, not the attest-build-provenance wrapper: GitHub's own
+      # release notes say v4 of that wrapper is exactly a wrapper and that new
+      # work should use this action. With no predicate and no sbom-path it
+      # produces the same SLSA build provenance the wrapper did.
+      #
+      # This answers a different question from the provenance inside the index.
+      # BuildKit's says what went into the image; this one says the image came
+      # out of this repository's workflow, signed against the runner's OIDC
+      # identity and checkable with `gh attestation verify` by someone who
+      # trusts neither GHCR nor us. Over the index digest, so one signature
+      # covers both architectures.
+      #
+      # No storage record: they can only be created for organisation-owned
+      # repositories, and this one is user-owned, so leaving it on would ask
+      # for an artifact-metadata: write permission that could never be used.
+      - uses: actions/attest@v4
         with:
           subject-name: ghcr.io/aryonoco/baikal
           subject-digest: ${{ steps.merge.outputs.digest }}
           push-to-registry: true
+          create-storage-record: false
