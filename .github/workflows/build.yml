@@ -1,17 +1,29 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-# This file runs the repository's own gates rather than a second set spelled
-# out here. Every command it invokes is a justfile recipe, every version those
-# recipes resolve comes from mise.toml, and both are installed from those files
-# - so a green run here and a green `just ci` on a developer's machine are
-# statements about the same binaries reading the same configuration. A gate
-# configured one way locally and another way in CI makes one of the two a lie,
-# and nothing tells you which.
+# The static gates and the acceptance suite run through justfile recipes, using
+# the binaries mise.toml pins - so a green `lint` here and a green `just lint`
+# on a developer's machine are statements about the same tools reading the same
+# .shellcheckrc and phpstan.neon. That is the half where a gate configured one
+# way locally and another way in CI would make one of the two a lie, and
+# nothing would say which.
+#
+# The build and publish paths are not that, and claiming otherwise would be the
+# same mistake pointing the other way. They call `docker buildx`, `skopeo` and
+# `jq` directly, because there is no local equivalent to call: `just build` is
+# one `docker build`, while this builds through a layer cache into an OCI
+# layout with two attestations, and nothing in the publish path exists locally
+# at all. jq is pinned in mise.toml alongside the linters. Buildx and skopeo
+# are not, and skopeo cannot be - it is not in mise's registry. Both are
+# whatever the runner image ships (ubuntu-26.04 currently carries buildx 0.36.1
+# and skopeo 1.21.0-dev), which makes the runner image an unpinned dependency
+# of this pipeline and not merely the place it runs. skopeo is the one to watch:
+# it is what carries the tested bytes to the registry unchanged, so "what ships
+# is what was tested" rests on a binary whose version we do not choose.
 #
 # The shape of the pipeline is: build each architecture once on a runner of
 # that architecture, hand the resulting image to every engine leg for that
-# architecture, and publish by pushing the very tarballs that passed. Nothing
+# architecture, and publish by pushing the very layouts that passed. Nothing
 # is built twice and nothing is emulated, so "what ships is what was tested"
 # is an identity rather than an argument from determinism - a from-source PHP
 # build is not bit-reproducible, and two builds of one commit are two images.
@@ -345,9 +357,16 @@ jobs:
         with:
           persist-credentials: false
 
-      # For the imagetools plugin that merges the two architectures, not for a
-      # builder: nothing is built in this job, by design. No mise here either -
-      # this job runs no justfile recipe, only registry plumbing.
+      # For the pinned jq the merge step reads its metadata file with. No
+      # justfile recipe runs in this job; jq is the only tool on the publish
+      # path whose version this repository gets to choose.
+      - uses: jdx/mise-action@v4
+
+      # For a current buildx, because it is `imagetools create` that merges the
+      # two architectures here. The action does also stand up a
+      # docker-container builder, which this job has no use for - nothing is
+      # built here, by design - but that is the price of taking the plugin from
+      # the documented place rather than trusting whatever the runner ships.
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4

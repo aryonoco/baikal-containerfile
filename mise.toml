@@ -25,6 +25,14 @@
 # after that version would fail there and nowhere else.
 "aqua:casey/just" = "1.58.0"
 
+# Read by the CI publish job, not by any recipe: it lifts the new index's
+# digest out of the JSON `docker buildx imagetools create --metadata-file`
+# writes. It is pinned here because it is in the registry and therefore free to
+# pin. The other two binaries that path leans on are not so lucky - `docker
+# buildx` and `skopeo` come from the runner image, and skopeo is not in mise's
+# registry at all. See the header of .github/workflows/build.yml.
+"aqua:jqlang/jq" = "1.8.2"
+
 # Pinned but not yet invoked by any recipe: the workflow gates that use them
 # arrive with the CI pipeline. They are here so this file is the whole picture
 # of what the repository's tooling is, rather than the part of it wired up so
