@@ -1,0 +1,295 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
+
+# The lint job calls the justfile's recipes. The build and publish 
+# jobs have no local equivalent to call and invoke their tools directly.
+#
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    #
+    # Check to see if something outside this repository has changed. 
+    # Baikal release URL or its checksum, FrankenPHP
+    # static builder's behaviour the runner images. 
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+# Two pushes to main landing close together would race to write :latest.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Installs mise.toml tools
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      # Mise doesn't handle PHP tooling well so this is direct.
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
+        with:
+          php-version: '8.5'
+          coverage: none
+      - run: just setup
+      - run: just lint
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build:
+    name: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      # The default docker driver cannot write an image index
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+      - name: Pin the build clock to the commit
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "${GITHUB_ENV}"
+      - name: Cache the build layers
+        if: github.event_name != 'schedule'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-${{ matrix.arch }}-${{ hashFiles('Containerfile') }}-${{ github.run_id }}
+          restore-keys: |
+            buildx-${{ matrix.arch }}-${{ hashFiles('Containerfile') }}-
+            buildx-${{ matrix.arch }}-
+
+      # An OCI layout is used to enable attestations
+      - name: Build the image
+        run: |
+          image=$(just --evaluate IMAGE)
+          args=(
+            --attest type=provenance,mode=max
+            --attest type=sbom
+            --output type=oci,dest=/tmp/image.tar,rewrite-timestamp=true
+            -f Containerfile -t "${image}"
+          )
+          if [ "${GITHUB_EVENT_NAME}" = schedule ]; then
+            # The canary run. These two stages are the only ones that reach
+            # outside this repository, so a cache hit on either means the
+            # weekly build tested nothing upstream.
+            args+=(--no-cache-filter frankenphp-build --no-cache-filter fetch)
+          else
+            # reset=true replaces the export rather than appending to it, which
+            # stops the directory growing every run until it is too large to
+            # restore. Needs Buildx 0.35 or later; the runner has 0.36.
+            args+=(
+              --cache-from type=local,src=/tmp/.buildx-cache
+              --cache-to type=local,dest=/tmp/.buildx-cache,mode=max,reset=true
+            )
+          fi
+          docker buildx build "${args[@]}" .
+
+      - name: Publish the image as an artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: image-${{ matrix.arch }}
+          path: /tmp/image.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  test:
+    name: test
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        engine: [docker, podman]
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image-${{ matrix.arch }}
+          path: /tmp
+
+      - name: Allow unprivileged user namespaces
+        if: matrix.engine == 'podman'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
+      - name: Use slirp4netns rather than pasta
+        if: matrix.engine == 'podman'
+        run: |
+          mkdir -p ~/.config/containers
+          printf '[network]\ndefault_rootless_network_cmd = "slirp4netns"\n' \
+            > ~/.config/containers/containers.conf
+          podman info --format '{{.Host.RootlessNetworkCmd}}'
+
+      - name: Load the image under test
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: |
+          image=$(just --evaluate IMAGE)
+          case "${ENGINE}" in
+            docker) dest="docker-daemon:${image}" ;;
+            podman) dest="containers-storage:${image}" ;;
+            *) echo "unknown engine ${ENGINE}" >&2; exit 1 ;;
+          esac
+          skopeo --version
+          skopeo copy "oci-archive:/tmp/image.tar" "${dest}"
+          "${ENGINE}" image inspect "${image}" >/dev/null
+          "${ENGINE}" --version
+
+      - name: Acceptance suite
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: just acceptance
+
+  scan:
+    name: scan
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # For `just` and trivy.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image-${{ matrix.arch }}
+          path: /tmp
+
+      - name: Vulnerability scan
+        env:
+          ARCHIVE: /tmp/image.tar
+        run: just scan
+
+  publish:
+    name: publish
+    needs: [lint, test, scan]
+    # Pushes from main only
+    if: >-
+      github.ref == 'refs/heads/main'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write # push the image and the attestation below
+      id-token: write # Sigstore signs against the runner's OIDC identity
+      attestations: write # actions/attest writes the provenance
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # For jq
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      # For `imagetools create`
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Each artifact lands in its own directory under this path
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: image-*
+          path: /tmp/images
+      - name: Read the Baikal version from the Containerfile
+        id: version
+        run: |
+          v=$(grep -oP '^ARG BAIKAL_VERSION=\K.*' Containerfile)
+          if [ -z "${v}" ]; then
+            echo 'no ARG BAIKAL_VERSION line in Containerfile' >&2
+            exit 1
+          fi
+          echo "baikal=${v}" >> "${GITHUB_OUTPUT}"
+      - name: Push each tested architecture
+        env:
+          VERSION: ${{ steps.version.outputs.baikal }}
+        run: |
+          for arch in amd64 arm64; do
+            skopeo copy --all \
+              --digestfile "/tmp/digest-${arch}" \
+              --dest-authfile "${HOME}/.docker/config.json" \
+              "oci-archive:/tmp/images/image-${arch}/image.tar" \
+              "docker://ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
+          done
+      - name: Merge the architectures into one index
+        id: merge
+        env:
+          VERSION: ${{ steps.version.outputs.baikal }}
+        run: |
+          created=$(date -u -d "@$(git log -1 --pretty=%ct)" +%Y-%m-%dT%H:%M:%SZ)
+          docker buildx imagetools create \
+            --metadata-file /tmp/index.json \
+            --annotation "index:org.opencontainers.image.version=${VERSION}" \
+            --annotation "index:org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --annotation "index:org.opencontainers.image.created=${created}" \
+            -t "ghcr.io/aryonoco/baikal:${VERSION}" \
+            -t "ghcr.io/aryonoco/baikal:latest" \
+            "ghcr.io/aryonoco/baikal@$(cat /tmp/digest-amd64)" \
+            "ghcr.io/aryonoco/baikal@$(cat /tmp/digest-arm64)"
+          digest=$(jq -er '."containerimage.descriptor".digest' /tmp/index.json)
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+      # BuildKit's is about what went into the image. This says the image came
+      # out of this repository's workflow, signed against the runner's OIDC
+      # identity
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ghcr.io/aryonoco/baikal
+          subject-digest: ${{ steps.merge.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false

@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
+{
+	# container speaks plain HTTP over a trusted network. 
+	auto_https off
+	frankenphp
+	log {
+		output stdout
+		format json
+	}
+}
+
+:8080 {
+	root /var/www/baikal/html
+
+	# RFC 6764 discovery
+	redir /.well-known/caldav /dav.php/ 301
+	redir /.well-known/carddav /dav.php/ 301
+
+	php_server
+
+	log {
+		output stdout
+		format json
+	}
+}

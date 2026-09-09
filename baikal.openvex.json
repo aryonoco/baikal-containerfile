@@ -1,0 +1,60 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/aryonoco/baikal-containerfile/vex/2026-09-09",
+  "author": "Aryan Ameri <github@aryan.ameri.coffee>",
+  "timestamp": "2026-09-09T00:00:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-84304"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/caddy",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/google.golang.org/grpc@v1.81.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path"
+    },
+    {
+      "vulnerability": {
+        "name": "CVE-2026-84445"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/caddy",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/google.golang.org/grpc@v1.81.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path"
+    },
+    {
+      "vulnerability": {
+        "name": "GHSA-hrxh-6v49-42gf"
+      },
+      "products": [
+        {
+          "@id": "pkg:golang/caddy",
+          "subcomponents": [
+            {
+              "@id": "pkg:golang/google.golang.org/grpc@v1.81.1"
+            }
+          ]
+        }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_not_in_execute_path"
+    }
+  ]
+}

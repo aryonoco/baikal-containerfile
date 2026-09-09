@@ -1,0 +1,163 @@
+#!/usr/bin/env php
+<?php
+// SPDX-License-Identifier: BSD-2-Clause
+// SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
+
+// There is no shell in this image, so nothing can chain "bootstrap && serve".
+// This program does the bootstrap and then REPLACES ITSELF with the server via
+// pcntl_exec so FrankenPHP inherits PID 1 and receives signals directly.
+// The two symbols this file borrows from the image come from the Baikal
+// archive at build time.
+
+declare(strict_types=1);
+
+if (!is_file('/var/www/baikal/vendor/autoload.php')) {
+    fail('/var/www/baikal/vendor/autoload.php is missing: this is not a complete Baikal image');
+}
+require '/var/www/baikal/vendor/autoload.php';
+
+if (!is_file('/var/www/baikal/Core/Distrib.php')) {
+    fail('/var/www/baikal/Core/Distrib.php is missing: this is not a complete Baikal image');
+}
+require '/var/www/baikal/Core/Distrib.php';   // defines BAIKAL_VERSION
+
+use Symfony\Component\Yaml\Yaml;
+
+const SERVER_BIN = '/usr/local/bin/frankenphp';
+const CADDYFILE  = '/etc/caddy/Caddyfile';
+
+function fail(string $msg): never {
+    fwrite(STDERR, "baikal-bootstrap: $msg\n");
+    exit(1);
+}
+
+function info(string $msg): void {
+    fwrite(STDOUT, "baikal-bootstrap: $msg\n");
+}
+
+function env(string $name, ?string $default = null): string {
+    $v = getenv($name);
+    if ($v === false || $v === '') {
+        if ($default === null) {
+            fail("$name is required and is not set");
+        }
+        return $default;
+    }
+    return $v;
+}
+
+$configDir   = rtrim(env('BAIKAL_PATH_CONFIG', '/data/config/'), '/') . '/';
+$specificDir = rtrim(env('BAIKAL_PATH_SPECIFIC', '/data/Specific/'), '/') . '/';
+$configFile  = $configDir . 'baikal.yaml';
+$dbFile      = $specificDir . 'db/db.sqlite';
+$installLock = $specificDir . 'INSTALL_DISABLED';
+
+foreach ([$configDir, $specificDir . 'db'] as $dir) {
+    if (!is_dir($dir) && !@mkdir($dir, 0o750, true)) {
+        fail("cannot create $dir - is the volume writable by uid " . getmyuid() . '?');
+    }
+}
+
+$haveConfig = file_exists($configFile);
+$haveDb     = file_exists($dbFile);
+
+if ($haveConfig && !$haveDb) {
+    fail("$configFile exists but $dbFile does not. Refusing to create an empty "
+       . 'database beside an existing config: restore both together, they are '
+       . 'one unit.');
+}
+
+if (!$haveConfig) {
+    $password = env('BAIKAL_ADMIN_PASSWORD');   // no default: refuses if unset
+    $realm    = env('BAIKAL_AUTH_REALM', 'BaikalDAV');
+
+    $config = [
+        'system' => [
+            'configured_version'    => BAIKAL_VERSION,
+            'timezone'              => env('BAIKAL_TIMEZONE', 'UTC'),
+            'card_enabled'          => true,
+            'cal_enabled'           => true,
+            // Upstream defaults to Digest but that's problematic
+            'dav_auth_type'         => env('BAIKAL_DAV_AUTH_TYPE', 'Basic'),
+            // sha256 of "admin:<realm>:<password>", username: admin. DAV
+            // users use md5 into users.digesta1, managed through the admin UI.
+            'admin_passwordhash'    => hash('sha256', 'admin:' . $realm . ':' . $password),
+            'failed_access_message' => 'user %u authentication failure for Baikal',
+            'auth_realm'            => $realm,
+            'base_uri'              => '',
+            // Baikal registers its iMIP mail plugin if this is non-empty
+            'invite_from'           => getenv('BAIKAL_INVITE_FROM') ?: '',
+        ],
+        'database' => [
+            'backend'        => 'sqlite',
+            'sqlite_file'    => $dbFile,
+            // Vestigial: a leftover from the legacy config.system.php 
+            'encryption_key' => '',
+        ],
+    ];
+
+    file_put_contents($configFile, Yaml::dump($config, 4, 4));
+    // Must stay writable on every request
+    chmod($configFile, 0o640);
+    info("wrote $configFile");
+}
+
+if (!$haveDb) {
+    $schema = '/var/www/baikal/Core/Resources/Db/SQLite/db.sql';
+    if (!is_readable($schema)) {
+        fail("schema $schema is missing from the image");
+    }
+    $schemaSql = file_get_contents($schema);
+    if ($schemaSql === false) {
+        fail("schema $schema could not be read");
+    }
+    $pdo = new PDO('sqlite:' . $dbFile, null, null, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    ]);
+    $pdo->exec($schemaSql);
+    unset($pdo);
+    chmod($dbFile, 0o640);
+    info("created $dbFile");
+}
+
+// Its absence re-opens the unauthenticated /admin/install/ database wizard
+if (!file_exists($installLock)) {
+    touch($installLock);
+    info("wrote $installLock");
+}
+
+// Version drift. 
+$onDisk = Yaml::parseFile($configFile);
+if (!is_array($onDisk) || !isset($onDisk['system']) || !is_array($onDisk['system'])) {
+    fail("$configFile has no system section. Refusing to guess.");
+}
+
+$configured = $onDisk['system']['configured_version'] ?? null;
+
+if (!is_string($configured) || $configured === '') {
+    fail("$configFile has no usable system.configured_version. Refusing to guess.");
+}
+
+if (version_compare(BAIKAL_VERSION, $configured, '>')) {
+    // Upstream's VersionUpgrade::upgrade() gates every schema change on a
+    // threshold, so this is the same operation.
+    // test/upstream-migrations.sh fails the build if upstream changes.
+    if (version_compare($configured, '0.10.0', '<')) {
+        fail("configured_version $configured is below 0.10.0 and needs a real "
+           . 'schema migration this image will not perform. Back up /data, then '
+           . 'upgrade through Baikal 0.10.x first.');
+    }
+    $onDisk['system']['configured_version'] = BAIKAL_VERSION;
+    file_put_contents($configFile, Yaml::dump($onDisk, 4, 4));
+    info("cleared version drift: $configured -> " . BAIKAL_VERSION);
+} elseif (version_compare(BAIKAL_VERSION, $configured, '<')) {
+    // Baikal has no downgrade path at all.
+    fail("configured_version $configured is NEWER than this image's "
+       . BAIKAL_VERSION . '. Baikal cannot downgrade. Use a newer image.');
+}
+
+info('ready, Baikal ' . BAIKAL_VERSION);
+
+// Replace this process with the server
+pcntl_exec(SERVER_BIN, ['run', '--config', CADDYFILE]);
+fail('pcntl_exec failed to start ' . SERVER_BIN);

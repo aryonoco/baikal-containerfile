@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
+
+[tools]
+"aqua:hadolint/hadolint" = "2.15.1"
+"aqua:koalaman/shellcheck" = "0.11.0"
+"pipx:reuse" = "6.2.0"
+"aqua:casey/just" = "1.58.0"
+
+"aqua:jqlang/jq" = "1.8.2"
+
+"aqua:suzuki-shunsuke/pinact" = "4.1.1"
+"aqua:aquasecurity/trivy" = "0.74.0"
+"aqua:zizmorcore/zizmor" = "1.30.0"
