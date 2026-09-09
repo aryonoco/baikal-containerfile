@@ -59,8 +59,15 @@ breaking change.
   distroless; that is the point. What it removes is us running apt, not the
   patching itself - `cc-debian13` still ships libc6, libssl3t64, libstdc++6,
   libgcc-s1, libgomp1, libzstd1 and zlib1g, all executable code that takes CVEs.
-  That obligation moves to the base image's own rebuilds, and the weekly
-  rebuild here is what collects them, by re-resolving the digest
+  That obligation moves to the base image's own rebuilds — and **nothing in
+  this repository collects them on its own.** `BUILDER_IMAGE` and
+  `RUNTIME_IMAGE` are pinned by immutable `@sha256:` and the Baikal archive by
+  checksum, so a rebuild on an unchanged Containerfile re-pulls identical bytes
+  and produces identical content. **Renovate is the update path**: a digest
+  bump arrives as a reviewable pull request that leaves a record of what moved
+  and when, which a blind rebuild does not. CI's weekly run exists to catch
+  upstream breakage early — a release URL that moved, a builder that changed
+  behaviour — and deliberately does not publish
 - **The binary must never carry a file capability.** The official FrankenPHP build
   carries `cap_net_bind_service=ep`, and a binary with a file capability cannot be
   exec'd at all under `--cap-drop ALL` — it dies with `Operation not permitted`

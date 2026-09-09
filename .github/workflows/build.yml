@@ -8,6 +8,13 @@
 # statements about the same binaries reading the same configuration. A gate
 # configured one way locally and another way in CI makes one of the two a lie,
 # and nothing tells you which.
+#
+# The shape of the pipeline is: build each architecture once on a runner of
+# that architecture, hand the resulting image to every engine leg for that
+# architecture, and publish by pushing the very tarballs that passed. Nothing
+# is built twice and nothing is emulated, so "what ships is what was tested"
+# is an identity rather than an argument from determinism - a from-source PHP
+# build is not bit-reproducible, and two builds of one commit are two images.
 name: build
 
 on:
@@ -15,13 +22,19 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Weekly. The final image is distroless but it is not empty: cc-debian13
-    # ships libc6, libssl3t64, libstdc++6 and the rest, and the static PHP
-    # build carries its own OpenSSL - all executable code that takes CVEs.
-    # Nothing can apt-get those fixes in, which is the point of the base, so
-    # collecting them means re-resolving the digests and rebuilding. The
-    # version tag does not move; the digest under it does, which a consumer
-    # pinning digests sees as an ordinary bump.
+    # Weekly, and it deliberately does not publish - see the publish job's
+    # condition.
+    #
+    # This exists to find out early that something outside this repository has
+    # moved under it: the Baikal release URL or its checksum, the FrankenPHP
+    # static builder's behaviour, the runner images, a linter that changed its
+    # mind. It cannot collect security fixes, and it must not be described as
+    # if it could: BUILDER_IMAGE and RUNTIME_IMAGE are pinned by immutable
+    # @sha256: digests and the Baikal archive by checksum, so a rebuild on an
+    # unchanged Containerfile re-pulls the same bytes and produces the same
+    # content. Renovate is the update path, and a digest bump arriving as a
+    # reviewable pull request is better than a blind weekly rebuild: it leaves
+    # a record of what moved and when.
     - cron: '17 4 * * 1'
   workflow_dispatch:
 
@@ -30,9 +43,19 @@ on:
 permissions:
   contents: read
 
+# One run per ref. Two pushes to main landing close together would otherwise
+# race to write :latest, and the loser is whichever finishes second rather than
+# whichever is newer. Superseded pull-request runs are cancelled because
+# nothing depends on their result; runs on main are queued because their result
+# is the published image.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -72,20 +95,113 @@ jobs:
       # gate.
       - run: just lint
 
-  test:
-    runs-on: ubuntu-latest
+  build:
+    # One build per architecture, on a runner of that architecture. GitHub's
+    # arm64 runners are free for public repositories, which is what makes this
+    # affordable and retires QEMU entirely - a static PHP build under
+    # qemu-aarch64 was the least predictable thing in this pipeline.
+    #
+    # 26.04 rather than 24.04, and the reason is podman, not novelty: 24.04
+    # carries podman 4.9.3 while the deployment target runs 5.4.2, so the
+    # dual-engine leg there would be proving something about an engine a whole
+    # major version away from the one this estate runs. 26.04 carries 5.7.0.
+    # Both 26.04 images are marked preview; that is accepted knowingly.
     strategy:
-      # Both engines, because the consumer runs rootless Podman while local
-      # development runs Docker. Podman rejects things Docker accepts, so an
-      # image tested under only one can ship a confinement contract that
-      # quietly does not hold on the other. GitHub's ubuntu runners carry both,
-      # so this costs a second job and nothing else.
-      #
-      # fail-fast off: when the two diverge, which one broke is the finding,
-      # and cancelling the other leg throws that away.
       fail-fast: false
       matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    # Generous, because this is the from-source PHP build and a free runner has
+    # a fraction of a developer machine's parallelism. Not six hours, because
+    # the failure mode worth catching is a build that has stopped making
+    # progress rather than one that is merely slow.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # For `just`, which owns the image's tag.
+      - uses: jdx/mise-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      # Keyed on the Containerfile, because everything that makes this build
+      # expensive is declared there - the extension list, the builder image
+      # digest, the Baikal version - so a real bump busts the cache and pays
+      # for itself while editing a test or this file does not. Local timings
+      # understate the value badly: ~4 minutes on a machine with eighteen cores
+      # to give it, and a free runner has a small fraction of that.
+      #
+      # The architecture is a namespace in the key, not an input to it. Layer
+      # caches are per-platform, so sharing one key between the two runners
+      # would mean each restoring gigabytes it cannot use and then overwriting
+      # the other's.
+      - name: Cache the build layers
+        uses: actions/cache@v6
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-${{ matrix.arch }}-${{ hashFiles('Containerfile') }}
+          restore-keys: buildx-${{ matrix.arch }}-
+
+      # Exported as a tarball rather than pushed, because this runs on every
+      # pull request including forks, where there is no registry credential and
+      # must not be one. The tarball is what the engine legs load and what the
+      # publish job eventually pushes, so no image is ever built twice.
+      #
+      # The tag comes from the justfile so the suite and the build cannot
+      # disagree about which image is under test.
+      - name: Build the image
+        run: |
+          image=$(just --evaluate IMAGE)
+          docker buildx build \
+            --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            --output type=docker,dest=/tmp/image.tar \
+            -f Containerfile -t "${image}" .
+          # buildx's local cache exporter appends rather than replaces, so
+          # without this swap the directory grows every run until it is too
+          # large to restore.
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Publish the image as an artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: image-${{ matrix.arch }}
+          path: /tmp/image.tar
+          # Long enough to be downloaded by the test legs and the publish job
+          # in the same run, and no longer: this is a build intermediate, not a
+          # release artefact.
+          retention-days: 1
+          if-no-files-found: error
+
+  test:
+    needs: build
+    # Four legs: each architecture under each engine, every one of them running
+    # the single image its architecture's build job produced. The consumer runs
+    # rootless Podman and development runs Docker, and Podman rejects things
+    # Docker accepts, so an image proved under only one can ship a confinement
+    # contract that quietly does not hold on the other.
+    #
+    # fail-fast off: when legs diverge, which one broke is the finding, and
+    # cancelling the others throws that away.
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
         engine: [docker, podman]
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
@@ -94,58 +210,24 @@ jobs:
       # For `just`, which is what invokes the suite.
       - uses: jdx/mise-action@v4
 
-      - uses: docker/setup-buildx-action@v4
-
-      # Keyed on the Containerfile alone. Everything that makes the PHP build
-      # expensive is declared there - the extension list, the builder image
-      # digest, the Baikal version - so a real bump busts the cache and pays
-      # for itself, while editing a test or this file does not. Local timings
-      # understate this badly: the build is ~4 minutes on a machine with
-      # eighteen cores to give it, and a free runner has a small fraction of
-      # that.
-      #
-      # The key deliberately omits the engine. Both legs build the identical
-      # image with the identical builder, and two copies of a multi-gigabyte
-      # layer cache would evict each other out of the repository's cache
-      # budget. Whichever leg finishes second finds the key already written and
-      # says so; that is the intended outcome, not a fault.
-      - name: Cache the build layers
-        uses: actions/cache@v6
+      - uses: actions/download-artifact@v8
         with:
-          path: /tmp/.buildx-cache
-          key: buildx-${{ hashFiles('Containerfile') }}
-          restore-keys: buildx-
+          name: image-${{ matrix.arch }}
+          path: /tmp
 
-      # buildx under both legs, with only the handover to the engine under test
-      # differing. Building each leg with its own engine would mean the two are
-      # not testing the same bytes, which is the one thing this matrix exists
-      # to compare. The tag comes from the justfile so that the suite and the
-      # build cannot disagree about which image is under test.
-      - name: Build the image
+      # `load` reads a docker-archive on both engines, so the two legs differ
+      # in nothing but which binary is asked. The inspect afterwards is not
+      # ceremony: it is the guard against an engine reading the archive's
+      # RepoTags differently, which would otherwise surface much later as the
+      # suite failing to find an image it was told exists.
+      - name: Load the image under test
+        env:
+          ENGINE: ${{ matrix.engine }}
         run: |
           image=$(just --evaluate IMAGE)
-          docker buildx build --load \
-            --cache-from type=local,src=/tmp/.buildx-cache \
-            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
-            -f Containerfile -t "${image}" .
-          # buildx's local cache exporter appends rather than replaces, so
-          # without this swap the directory grows every run until it is too
-          # large to restore.
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
-
-      # The version is logged because this leg has never run anywhere before
-      # and the first thing worth knowing about a failure is which podman saw
-      # it.
-      - name: Hand the image to podman
-        if: matrix.engine == 'podman'
-        run: |
-          # pipefail, because the runner's default shell does not set it and
-          # `docker save` failing into a pipe would otherwise be reported only
-          # as `podman load` choking on an empty stream.
-          set -o pipefail
-          podman --version
-          docker save "$(just --evaluate IMAGE)" | podman load
+          "${ENGINE}" load -i /tmp/image.tar
+          "${ENGINE}" image inspect "${image}" >/dev/null
+          "${ENGINE}" --version
 
       # The acceptance suite is the gate. It runs the image under the exact
       # confinement the README promises - no capabilities, read-only root, uid
@@ -160,13 +242,16 @@ jobs:
 
   publish:
     needs: [lint, test]
-    # Never from a pull request, and never from a branch that is not main. The
-    # push trigger already restricts pushes to main; the ref test is what stops
-    # a workflow_dispatch on a topic branch from moving :latest. The weekly
-    # schedule runs on main and is meant to reach here - that rebuild is the
-    # only thing that moves the digest under an unchanged version tag.
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    # Pushes only from main, and only from a push or a hand-run dispatch. Not
+    # from a pull request, which has no credential and no business moving a
+    # tag; and explicitly not from the schedule, because a weekly rebuild of
+    # digest-pinned inputs produces identical content and republishing it would
+    # be churn a digest-pinning consumer has to look at for nothing.
+    if: >-
+      github.ref == 'refs/heads/main'
+      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
     permissions:
       contents: read
       # Push the image, and with push-to-registry below its attestation too.
@@ -179,10 +264,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # arm64 is built under emulation, and it is the slow leg by a wide
-      # margin: a static PHP build through qemu-aarch64. That cost is why
-      # publishing is off the pull-request path entirely.
-      - uses: docker/setup-qemu-action@v4
+      - uses: jdx/mise-action@v4
+
+      # For the imagetools plugin that merges the two architectures, not for a
+      # builder: nothing is built in this job, by design.
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4
@@ -190,6 +275,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Each artifact lands in its own directory under this path, which is what
+      # keeps two files both called image.tar apart.
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: image-*
+          path: /tmp/images
 
       # The Containerfile is the single place the version is written, so the
       # tag is read back out of it rather than kept in step with it by hand.
@@ -206,29 +298,57 @@ jobs:
           fi
           echo "baikal=${v}" >> "${GITHUB_OUTPUT}"
 
-      # Deliberately uncached, unlike the test build. Every push to main and
-      # every weekly run pays the whole multi-arch build, which for the weekly
-      # run is the entire point: the base and builder digests are re-resolved
-      # and the result is a genuinely fresh image rather than replayed layers.
-      - uses: docker/build-push-action@v7
-        id: push
-        with:
-          context: .
-          file: Containerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          sbom: true
-          provenance: mode=max
-          tags: |
-            ghcr.io/aryonoco/baikal:${{ steps.version.outputs.baikal }}
-            ghcr.io/aryonoco/baikal:latest
+      # The tarballs the suite passed against, pushed unchanged. Nothing is
+      # rebuilt here, which is the whole point: a from-source PHP build is not
+      # bit-reproducible, so a publish that rebuilt would ship an image no test
+      # had ever seen.
+      #
+      # One tag per architecture, because the docker CLI cannot push a local
+      # image without naming it. They are not scaffolding to be tidied away
+      # later - they are the addressable halves the index below points at, and
+      # they are useful on their own to anyone debugging one architecture.
+      #
+      # Loaded one at a time: both archives carry the same local tag, so
+      # loading both before tagging either would leave the first image
+      # reachable only by ID.
+      - name: Push each tested architecture
+        env:
+          VERSION: ${{ steps.version.outputs.baikal }}
+        run: |
+          image=$(just --evaluate IMAGE)
+          for arch in amd64 arm64; do
+            docker load -i "/tmp/images/image-${arch}/image.tar"
+            docker tag "${image}" "ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
+            docker push "ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
+          done
 
-      # BuildKit's own provenance above describes the build to whoever already
-      # trusts the registry. This one is signed by GitHub's Sigstore identity
-      # and verifies with `gh attestation verify --repo` against this
-      # repository, which is a different and stronger claim.
+      # The multi-architecture index, assembled from digests that exist in the
+      # registry because they passed. imagetools copies manifests rather than
+      # rebuilding, so :latest and :<version> resolve to exactly the two images
+      # above.
+      - name: Merge the architectures into one index
+        id: merge
+        env:
+          VERSION: ${{ steps.version.outputs.baikal }}
+        run: |
+          docker buildx imagetools create \
+            -t "ghcr.io/aryonoco/baikal:${VERSION}" \
+            -t "ghcr.io/aryonoco/baikal:latest" \
+            "ghcr.io/aryonoco/baikal:${VERSION}-amd64" \
+            "ghcr.io/aryonoco/baikal:${VERSION}-arm64"
+          digest=$(docker buildx imagetools inspect \
+            "ghcr.io/aryonoco/baikal:${VERSION}" --format '{{.Manifest.Digest}}')
+          case "${digest}" in
+            sha256:*) ;;
+            *) echo "imagetools returned no index digest: '${digest}'" >&2; exit 1 ;;
+          esac
+          echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
+      # Signed by GitHub's Sigstore identity over the index, so it covers both
+      # architectures at once, and verifiable with `gh attestation verify
+      # --repo` without trusting the registry.
       - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/aryonoco/baikal
-          subject-digest: ${{ steps.push.outputs.digest }}
+          subject-digest: ${{ steps.merge.outputs.digest }}
           push-to-registry: true

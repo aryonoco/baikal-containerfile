@@ -46,13 +46,17 @@ build:
 
 # Run the acceptance suite against an image that already exists
 acceptance:
-    # Split out of `test` for CI, which builds the image once with buildx and a
-    # layer cache rather than with the engine's own build, then runs this
-    # against that one image under each engine in turn. Without the split CI
-    # would either rebuild inside the podman leg - testing different bytes from
-    # the docker leg, which is the one thing that matrix exists to rule out -
-    # or spell the suite's invocation out again in YAML, where it would drift
-    # from this file silently.
+    # Split out of `test` for CI, which builds each architecture once in a job
+    # of its own and then hands that one image to that architecture's docker
+    # and podman legs. This recipe is how a leg runs the suite against an image
+    # it did not build.
+    #
+    # Without the split CI would have to rebuild inside each leg, and a
+    # from-source PHP build is not bit-reproducible - so the engines would be
+    # compared across two different images rather than one, which is the single
+    # thing that matrix exists to rule out. The other way out would be a copy
+    # of the line below living in YAML, free to drift from this file in
+    # silence.
     ENGINE={{ENGINE}} IMAGE={{IMAGE}} ./test/acceptance.sh
 
 # Build the image, then run the acceptance suite against it
