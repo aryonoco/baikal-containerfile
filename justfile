@@ -14,6 +14,7 @@ IMAGE := "localhost/baikal:dev"
 # `just ci` a statement about a pipeline that does not exist. Bumping a pin is
 # then a commit, reviewed like any other, with the new findings in the diff.
 HADOLINT := "ghcr.io/hadolint/hadolint@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d"
+PHPSTAN := "ghcr.io/phpstan/phpstan:2.2.13@sha256:fda102448a1f9a771bc082edf5e0d04d96491f72d5d25edf7499ae94c14b08a7"
 SHELLCHECK := "shellcheck-py==0.11.0.1"
 REUSE := "reuse==6.2.0"
 
@@ -46,5 +47,11 @@ lint:
     # in this tree carries a `shellcheck disable=` directive and nothing may.
     git ls-files '*.sh' | xargs -r uvx --from {{SHELLCHECK}} shellcheck
     uvx --from {{REUSE}} reuse lint
+    # level max plus bleedingEdge, over the two PHP files this repository owns
+    # and no others - see phpstan.neon. No baseline and no ignoreErrors: both
+    # would silence our own code along with the two symbols the image supplies,
+    # which stubs/baikal-image.php declares properly instead.
+    {{ENGINE}} run --rm -v "{{justfile_directory()}}:/app" -w /app {{PHPSTAN}} analyse --no-progress
+
 # Everything CI runs
 ci: lint test

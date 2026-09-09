@@ -77,7 +77,7 @@ breaking change.
 
 - `just build` — build the image locally
 - `just test` — build, then run the acceptance suite against it
-- `just lint` — hadolint, ShellCheck, `reuse lint`
+- `just lint` — hadolint, ShellCheck, PHPStan and `reuse lint`, each pinned to an exact version and invoked exactly as CI invokes it
 - `just ci` — everything CI runs. Run this before committing
 
 ## Upstream facts — established from the 0.12.1
