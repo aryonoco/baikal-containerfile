@@ -150,6 +150,14 @@ jobs:
         if: matrix.engine == 'podman'
         run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
+      - name: Use slirp4netns rather than pasta
+        if: matrix.engine == 'podman'
+        run: |
+          mkdir -p ~/.config/containers
+          printf '[network]\ndefault_rootless_network_cmd = "slirp4netns"\n' \
+            > ~/.config/containers/containers.conf
+          podman info --format '{{.Host.RootlessNetworkCmd}}'
+
       - name: Load the image under test
         env:
           ENGINE: ${{ matrix.engine }}
