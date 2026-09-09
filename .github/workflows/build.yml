@@ -51,6 +51,7 @@ concurrency:
 
 jobs:
   lint:
+    name: lint
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     permissions:
@@ -81,14 +82,17 @@ jobs:
       # `composer install` that puts PHPStan in vendor/.
       - run: just setup
 
-      # hadolint, BuildKit's linter, ShellCheck, PHPStan, reuse and pinact.
-      # pinact reads the GitHub API to check each pinned SHA against the tag
-      # its comment names, and the job's own token is enough for that.
+      # hadolint, BuildKit's linter, ShellCheck, PHPStan, reuse, pinact and
+      # zizmor. The last two read the GitHub API - pinact to check each pinned
+      # SHA against the tag its comment names, zizmor for the audits that ask
+      # whether a SHA is in the action's repository at all - and the job's own
+      # token is enough for both.
       - run: just lint
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
+    name: build
     # One build per architecture, on a runner of that architecture. GitHub's
     # arm64 runners are free for public repositories, which is what makes this
     # affordable and retires QEMU entirely - a static PHP build under
@@ -233,6 +237,7 @@ jobs:
           if-no-files-found: error
 
   test:
+    name: test
     needs: build
     # Four legs: each architecture under each engine, every one of them running
     # the single image its architecture's build job produced. The consumer runs
@@ -307,6 +312,7 @@ jobs:
         run: just acceptance
 
   scan:
+    name: scan
     needs: build
     # The same artifact the test legs load, scanned as a file rather than by
     # name, so the bytes the scanner reads are the bytes that were tested and
@@ -347,6 +353,7 @@ jobs:
         run: just scan
 
   publish:
+    name: publish
     needs: [lint, test, scan]
     # Pushes only from main, and only from a push or a hand-run dispatch. Not
     # from a pull request, which has no credential and no business moving a
@@ -359,11 +366,9 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      # Push the image, and with push-to-registry below its attestation too.
-      packages: write
-      # Sigstore signs the provenance against the runner's OIDC identity.
-      id-token: write
-      attestations: write
+      packages: write # push the image, and with it the attestation below
+      id-token: write # Sigstore signs against the runner's OIDC identity
+      attestations: write # actions/attest writes the provenance
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

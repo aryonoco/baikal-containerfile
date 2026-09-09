@@ -83,7 +83,7 @@ breaking change.
 - `just setup` — install the pinned toolchain. One command on a fresh clone
 - `just build` — build the image locally
 - `just test` — build, then run the acceptance suite against it
-- `just lint` — pinact, hadolint, `docker build --check`, ShellCheck,
+- `just lint` — pinact, zizmor, hadolint, `docker build --check`, ShellCheck,
   `reuse lint` and PHPStan
 - `just scan` — Trivy over the image archive `just archive` writes
 - `just actions-pin`, `just actions-update` — move the workflow's action pins
@@ -92,11 +92,10 @@ breaking change.
 ## Where the toolchain comes from
 
 - **`mise.toml` is where tool versions are written.** hadolint, ShellCheck,
-  reuse, just, jq, pinact, trivy and the zizmor the CI workflow will use are all
-  listed there. Every justfile recipe runs through `mise exec`, so a recipe
-  resolves those binaries and not a same-named one on PATH. `gh` is the
-  exception, and only as a local fallback for the API token pinact needs; CI
-  passes its own
+  reuse, just, jq, pinact, trivy and zizmor are all listed there. Every justfile
+  recipe runs through `mise exec`, so a recipe resolves those binaries and not a
+  same-named one on PATH. `gh` is the exception, and only as a local fallback
+  for the API token pinact and zizmor need; CI passes its own
 - **PHP is a deliberate exception.** `php` and
   `composer` come from the host, not from mise: mise's only PHP backend
   compiles PHP from source, which is minutes added to every CI run in order to

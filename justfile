@@ -79,7 +79,7 @@ scan:
 actions-check:
     # `gh` is the one tool here that mise does not provide, and it is only a
     # local fallback for the API token: CI passes GITHUB_TOKEN itself, and
-    # nothing but pinact's GitHub API calls consumes it.
+    # nothing but the GitHub API calls pinact and zizmor make consumes it.
     GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" pinact run --verify --check
 
 # Rewrite tag references to the SHA they resolve to today
@@ -90,8 +90,17 @@ actions-pin:
 actions-update:
     GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" pinact run --update
 
+# Audit the workflow
+workflow-audit:
+    # The auditor persona is the widest of the three and accepts false
+    # positives; a finding it raises that is genuinely wrong is fixed or
+    # reported, not silenced. The token turns on the audits that ask GitHub
+    # whether a pinned SHA is really in the action's repository.
+    GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" \
+      zizmor --persona=auditor .github/workflows
+
 # Every static gate CI runs
-lint: actions-check
+lint: actions-check workflow-audit
     # By path, not piped over stdin. This used to run the official hadolint
     # image because mise had no native macOS build; the aqua backend has one,
     # so the container is gone and the file is named on the command line -
