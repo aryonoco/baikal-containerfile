@@ -385,15 +385,19 @@ jobs:
         run: |
           for arch in amd64 arm64; do
             skopeo copy --all \
+              --digestfile "/tmp/digest-${arch}" \
               --dest-authfile "${HOME}/.docker/config.json" \
               "oci-archive:/tmp/images/image-${arch}/image.tar" \
               "docker://ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
           done
 
-      # The multi-architecture index, assembled from manifests that are in the
-      # registry because they passed. imagetools copies rather than rebuilds,
-      # so :latest and :<version> resolve to exactly the two images above and
-      # to the attestation manifests that came with them.
+      # The multi-architecture index, assembled from the digests skopeo wrote
+      # rather than from the tags it wrote them to. A tag is a mutable pointer
+      # the instant it exists, so re-reading it here would leave a window in
+      # which the index could be built from something other than what this run
+      # pushed. imagetools copies rather than rebuilds, so :latest and
+      # :<version> resolve to those two indexes and everything attached to
+      # them.
       #
       # version, revision and created live here rather than as labels in the
       # Containerfile: set once on the index, they cannot end up saying
@@ -417,8 +421,8 @@ jobs:
             --annotation "index:org.opencontainers.image.created=${created}" \
             -t "ghcr.io/aryonoco/baikal:${VERSION}" \
             -t "ghcr.io/aryonoco/baikal:latest" \
-            "ghcr.io/aryonoco/baikal:${VERSION}-amd64" \
-            "ghcr.io/aryonoco/baikal:${VERSION}-arm64"
+            "ghcr.io/aryonoco/baikal@$(cat /tmp/digest-amd64)" \
+            "ghcr.io/aryonoco/baikal@$(cat /tmp/digest-arm64)"
           digest=$(jq -er '."containerimage.descriptor".digest' /tmp/index.json)
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
 
