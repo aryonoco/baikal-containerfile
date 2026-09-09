@@ -8,8 +8,30 @@
 // pcntl_exec, so FrankenPHP inherits PID 1 and receives signals directly.
 // PHP rather than shell for the same reason it would be anyway: baikal.yaml is
 // YAML and symfony/yaml already ships in Baikal's vendor tree.
+//
+// strict_types is on, so nothing below may lean on PHP's coercions. The two
+// symbols this file borrows from the image - Symfony's Yaml and the
+// BAIKAL_VERSION constant - arrive from the Baikal archive at build time and
+// are not in this repository; stubs/baikal-image.php declares exactly that
+// surface so PHPStan checks the calls rather than skipping them.
 
+declare(strict_types=1);
+
+// Both of these are COPYed in from the Baikal release archive at build time, so
+// either one missing means the image was assembled wrong rather than that the
+// deployment is misconfigured. PHP's own include fatal names the path but says
+// nothing about what the path was for, and a container that dies before its
+// first line of output is the hardest kind to diagnose. Guarding the requires
+// is also what lets a level-max analysis run over this file at all, on a
+// machine where /var/www/baikal does not exist.
+if (!is_file('/var/www/baikal/vendor/autoload.php')) {
+    fail('/var/www/baikal/vendor/autoload.php is missing: this is not a complete Baikal image');
+}
 require '/var/www/baikal/vendor/autoload.php';
+
+if (!is_file('/var/www/baikal/Core/Distrib.php')) {
+    fail('/var/www/baikal/Core/Distrib.php is missing: this is not a complete Baikal image');
+}
 require '/var/www/baikal/Core/Distrib.php';   // defines BAIKAL_VERSION
 
 use Symfony\Component\Yaml\Yaml;
@@ -113,10 +135,14 @@ if (!$haveDb) {
     if (!is_readable($schema)) {
         fail("schema $schema is missing from the image");
     }
+    $schemaSql = file_get_contents($schema);
+    if ($schemaSql === false) {
+        fail("schema $schema could not be read");
+    }
     $pdo = new PDO('sqlite:' . $dbFile, null, null, [
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
     ]);
-    $pdo->exec(file_get_contents($schema));
+    $pdo->exec($schemaSql);
     unset($pdo);
     chmod($dbFile, 0o640);
     info("created $dbFile");
@@ -134,11 +160,17 @@ if (!file_exists($installLock)) {
 // runs. For a CalDAV server that is a total outage which every client reports
 // as an auth or sync failure, so clearing it here is the difference between a
 // digest bump being a restart and being an incident.
-$config = Yaml::parseFile($configFile);
-$configured = $config['system']['configured_version'] ?? null;
+$onDisk = Yaml::parseFile($configFile);
+if (!is_array($onDisk) || !isset($onDisk['system']) || !is_array($onDisk['system'])) {
+    fail("$configFile has no system section. Refusing to guess.");
+}
 
-if ($configured === null) {
-    fail("$configFile has no system.configured_version. Refusing to guess.");
+$configured = $onDisk['system']['configured_version'] ?? null;
+
+// Not merely a null check: a version that parsed as a float or a list would
+// otherwise reach version_compare() and be coerced, and 0.10 is not 0.10.0.
+if (!is_string($configured) || $configured === '') {
+    fail("$configFile has no usable system.configured_version. Refusing to guess.");
 }
 
 if (version_compare(BAIKAL_VERSION, $configured, '>')) {
@@ -152,8 +184,8 @@ if (version_compare(BAIKAL_VERSION, $configured, '>')) {
            . 'schema migration this image will not perform. Back up /data, then '
            . 'upgrade through Baikal 0.10.x first.');
     }
-    $config['system']['configured_version'] = BAIKAL_VERSION;
-    file_put_contents($configFile, Yaml::dump($config, 4, 4));
+    $onDisk['system']['configured_version'] = BAIKAL_VERSION;
+    file_put_contents($configFile, Yaml::dump($onDisk, 4, 4));
     info("cleared version drift: $configured -> " . BAIKAL_VERSION);
 } elseif (version_compare(BAIKAL_VERSION, $configured, '<')) {
     // Baikal has no downgrade path at all.

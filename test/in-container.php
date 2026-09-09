@@ -150,10 +150,16 @@ function readOrThrow(string $path): string
  *
  * baikal.yaml is written by baikal-bootstrap through symfony/yaml's dumper, so
  * it is a two-level mapping of plain scalars: no anchors, no flow collections,
- * no block scalars, no repeated keys. Both accessors below insist the key
- * occurs exactly once and fail loudly otherwise, so this narrowness is checked
- * rather than assumed - which is the part a bare preg_replace on the same file
- * was missing.
+ * no block scalars, no repeated keys.
+ *
+ * Only the reader below proves that. It counts every match and refuses anything
+ * but exactly one. The writer cannot: preg_replace with a limit of 1 rewrites
+ * the first match and counts that one, so a duplicated key would be quietly
+ * half-rewritten and still report a replacement count of 1. What closes the gap
+ * is that setVersion() never writes without reading the value back through the
+ * reader afterwards, so a second occurrence is caught there instead. Between
+ * them the narrowness is checked rather than assumed, which is the part a bare
+ * preg_replace on the same file was missing.
  */
 function configLinePattern(string $key): string
 {
