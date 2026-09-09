@@ -9,6 +9,12 @@ set shell := ["mise", "exec", "--", "bash", "-euo", "pipefail", "-c"]
 ENGINE := env_var_or_default("ENGINE", "docker")
 IMAGE := "localhost/baikal:dev"
 
+# The file `just scan` reads. CI sets it to the OCI layout its build job
+# exported and its test legs loaded, so the bytes scanned are the bytes tested;
+# locally `just archive` writes one from the image the suite has just run
+# against.
+ARCHIVE := env_var_or_default("ARCHIVE", "/tmp/baikal-image.tar")
+
 # Tool versions live in mise.toml, bar PHPStan's, which composer.lock holds
 # because mise's only PHP backend builds PHP from source.
 
@@ -54,6 +60,21 @@ acceptance:
 # Build the image, then run the acceptance suite against it
 test: build acceptance
 
+# Write the image the suite ran against to {{ARCHIVE}}
+archive:
+    # The scanner reads a file rather than a name so that what it reads is the
+    # artifact the suite ran against, not whatever the engine holds under that
+    # tag by the time it is asked. CI downloads that file and never runs this.
+    {{ENGINE}} image save -o {{ARCHIVE}} {{IMAGE}}
+
+# Fail on any HIGH or CRITICAL vulnerability in {{ARCHIVE}}
+scan:
+    # Each statement in the VEX document names one advisory and one grpc
+    # version, so a FrankenPHP bump that moves grpc stops them matching and the
+    # findings come back rather than staying hidden behind the old argument.
+    trivy image --input {{ARCHIVE}} --vex baikal.openvex.json \
+      --severity HIGH,CRITICAL --exit-code 1
+
 # Verify every action reference is a SHA and matches the tag its comment names
 actions-check:
     # `gh` is the one tool here that mise does not provide, and it is only a
@@ -94,4 +115,4 @@ lint: actions-check
     vendor/bin/phpstan analyse --no-progress
 
 # Every gate, locally
-ci: lint test
+ci: lint test archive scan

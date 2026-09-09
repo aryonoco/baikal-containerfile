@@ -84,13 +84,14 @@ breaking change.
 - `just build` — build the image locally
 - `just test` — build, then run the acceptance suite against it
 - `just lint` — pinact, hadolint, ShellCheck, `reuse lint` and PHPStan
+- `just scan` — Trivy over the image archive `just archive` writes
 - `just actions-pin`, `just actions-update` — move the workflow's action pins
 - `just ci` — every gate, locally. Run this before committing
 
 ## Where the toolchain comes from
 
 - **`mise.toml` is where tool versions are written.** hadolint, ShellCheck,
-  reuse, just, jq, pinact and the trivy/zizmor the CI workflow will use are all
+  reuse, just, jq, pinact, trivy and the zizmor the CI workflow will use are all
   listed there. Every justfile recipe runs through `mise exec`, so a recipe
   resolves those binaries and not a same-named one on PATH. `gh` is the
   exception, and only as a local fallback for the API token pinact needs; CI
@@ -138,6 +139,11 @@ breaking change.
 - All linter gates are enforced as errors — fix them, don't suppress them. Any
   suppression, anywhere, needs an explicit, comment-level justification beside
   it to be accepted
+- **`baikal.openvex.json` is a reachability claim, not a suppression list.** Each
+  statement names one advisory and the grpc version it was argued against, so a
+  FrankenPHP bump that moves grpc makes the finding reappear. Re-argue it then;
+  widening a statement to cover the new version without doing so is a lie the
+  scanner cannot catch
 - REUSE-compliant SPDX headers on every file; licence is **BSD-2-Clause**
 - The acceptance suite runs the image under the *exact* confinement the contract
   claims, so a check can never pass under looser settings than we ship. What CI

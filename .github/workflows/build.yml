@@ -306,8 +306,48 @@ jobs:
           ENGINE: ${{ matrix.engine }}
         run: just acceptance
 
+  scan:
+    needs: build
+    # The same artifact the test legs load, scanned as a file rather than by
+    # name, so the bytes the scanner reads are the bytes that were tested and
+    # the bytes publish pushes. Scanning a rebuild would scan a different
+    # image, and scanning the published tag would find out too late.
+    #
+    # One leg per architecture, on a runner of that architecture, because each
+    # architecture's FrankenPHP is a separate compile and the layout carries
+    # only its own platform.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # For `just` and trivy.
+      - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: image-${{ matrix.arch }}
+          path: /tmp
+
+      - name: Vulnerability scan
+        env:
+          ARCHIVE: /tmp/image.tar
+        run: just scan
+
   publish:
-    needs: [lint, test]
+    needs: [lint, test, scan]
     # Pushes only from main, and only from a push or a hand-run dispatch. Not
     # from a pull request, which has no credential and no business moving a
     # tag; and explicitly not from the schedule, which exists to detect
