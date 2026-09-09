@@ -129,6 +129,38 @@ if (!file_exists($installLock)) {
     info("wrote $installLock");
 }
 
+// Version drift. When BAIKAL_VERSION is newer than configured_version, Baikal
+// 302s EVERY request - dav.php included - to /admin/install/ until the upgrade
+// runs. For a CalDAV server that is a total outage which every client reports
+// as an auth or sync failure, so clearing it here is the difference between a
+// digest bump being a restart and being an incident.
+$config = Yaml::parseFile($configFile);
+$configured = $config['system']['configured_version'] ?? null;
+
+if ($configured === null) {
+    fail("$configFile has no system.configured_version. Refusing to guess.");
+}
+
+if (version_compare(BAIKAL_VERSION, $configured, '>')) {
+    // Upstream's VersionUpgrade::upgrade() gates every schema change on a
+    // threshold at or below 0.10.0. At or above that it performs no DDL and
+    // does nothing but write this key - so this is the same operation, not an
+    // imitation of it. test/upstream-migrations.sh fails the build if that
+    // stops being true.
+    if (version_compare($configured, '0.10.0', '<')) {
+        fail("configured_version $configured is below 0.10.0 and needs a real "
+           . 'schema migration this image will not perform. Back up /data, then '
+           . 'upgrade through Baikal 0.10.x first.');
+    }
+    $config['system']['configured_version'] = BAIKAL_VERSION;
+    file_put_contents($configFile, Yaml::dump($config, 4, 4));
+    info("cleared version drift: $configured -> " . BAIKAL_VERSION);
+} elseif (version_compare(BAIKAL_VERSION, $configured, '<')) {
+    // Baikal has no downgrade path at all.
+    fail("configured_version $configured is NEWER than this image's "
+       . BAIKAL_VERSION . '. Baikal cannot downgrade. Use a newer image.');
+}
+
 info('ready, Baikal ' . BAIKAL_VERSION);
 
 // Replace this process with the server. Not a fork: pcntl_exec overlays the

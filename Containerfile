@@ -44,6 +44,9 @@ RUN set -eux; \
     test -f /build/baikal/Core/Distrib.php; \
     test -d /build/baikal/vendor; \
     mkdir -p /data
+COPY test/upstream-migrations.sh /tmp/upstream-migrations.sh
+RUN /tmp/upstream-migrations.sh \
+      /build/baikal/Core/Frameworks/BaikalAdmin/Controller/Install/VersionUpgrade.php
 
 FROM ${RUNTIME_IMAGE}
 
