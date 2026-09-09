@@ -1,16 +1,9 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-# The lint job calls the justfile's recipes, so a gate is changed in one place.
-# The build and publish jobs have no local equivalent to call and invoke their
-# tools directly.
+# The lint job calls the justfile's recipes. The build and publish 
+# jobs have no local equivalent to call and invoke their tools directly.
 #
-# The shape of the pipeline is: build each architecture once on a runner of
-# that architecture, hand the resulting image to every engine leg for that
-# architecture, and publish by pushing the very layouts that passed. Nothing
-# is built twice and nothing is emulated, so "what ships is what was tested"
-# is an identity rather than an argument from determinism - a from-source PHP
-# build is not bit-reproducible, and two builds of one commit are two images.
 name: build
 
 on:
@@ -18,33 +11,16 @@ on:
     branches: [main]
   pull_request:
   schedule:
-    # Weekly, and it deliberately does not publish - see the publish job's
-    # condition.
     #
-    # This exists to find out early that something outside this repository has
-    # moved under it: the Baikal release URL or its checksum, the FrankenPHP
-    # static builder's behaviour, the runner images, a linter that changed its
-    # mind. It does not collect upstream security fixes and must not be relied
-    # on to; Renovate moves the pinned digests, as reviewable pull requests.
-    #
-    # For it to detect anything the run has to reach past the layer cache, and
-    # it does - see the build job. A weekly build that restored the cache would
-    # hit on both the archive fetch and the PHP compile.
+    # Check to see if something outside this repository has changed. 
+    # Baikal release URL or its checksum, FrankenPHP
+    # static builder's behaviour the runner images. 
     - cron: '17 4 * * 1'
   workflow_dispatch:
 
-# Nothing by default, granted per job. A workflow with no permissions block at
-# all inherits the account default, and read-only only became that default for
-# entities created after February 2023 - so "we did not set it" can quietly
-# mean a write-scoped token. Starting from {} makes every grant below a
-# deliberate one, and only publish needs more than reading the checkout.
 permissions: {}
 
-# One run per ref. Two pushes to main landing close together would otherwise
-# race to write :latest, and the loser is whichever finishes second rather than
-# whichever is newer. Superseded pull-request runs are cancelled because
-# nothing depends on their result; runs on main are queued because their result
-# is the published image.
+# Two pushes to main landing close together would race to write :latest.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -59,52 +35,23 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Nothing in this job pushes, and `git ls-files` and `reuse lint`
-          # read the index rather than the remote, so the checkout token has no
-          # use after this step and is not worth leaving in .git/config.
           persist-credentials: false
 
-      # Installs the tools mise.toml lists, `just` among them.
+      # Installs mise.toml tools
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
-      # Not from mise: its only PHP backend compiles PHP from source, which
-      # would add minutes to every run in order to analyse two files. 8.5
-      # because that is what the image's FrankenPHP build ships; phpstan.neon
-      # fixes the analysis target either way.
+      # Mise doesn't handle PHP tooling well so this is direct.
       - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240 # 2.37.2
         with:
           php-version: '8.5'
-          # Nothing here measures coverage, and Xdebug loaded into the analyser
-          # is a large slowdown bought for nothing.
           coverage: none
-
-      # `mise install` again, a no-op after the action, plus the
-      # `composer install` that puts PHPStan in vendor/.
       - run: just setup
-
-      # hadolint, BuildKit's linter, ShellCheck, PHPStan, reuse, pinact and
-      # zizmor. The last two read the GitHub API - pinact to check each pinned
-      # SHA against the tag its comment names, zizmor for the audits that ask
-      # whether a SHA is in the action's repository at all - and the job's own
-      # token is enough for both.
       - run: just lint
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   build:
     name: build
-    # One build per architecture, on a runner of that architecture. GitHub's
-    # arm64 runners are free for public repositories, which is what makes this
-    # affordable and retires QEMU entirely - a static PHP build under
-    # qemu-aarch64 was the least predictable thing in this pipeline.
-    #
-    # 26.04 rather than 24.04, and the reason is podman, not novelty: 24.04
-    # carries podman 4.9.3 while the deployment target runs 5.4.2, so the
-    # dual-engine leg there would be proving something about an engine a whole
-    # major version away from the one this estate runs. 26.04 carries 5.7.0 -
-    # three minors ahead of the target rather than equal to it, which is the
-    # closer of the two options available and not a match. Both 26.04 images
-    # are marked preview; that is accepted knowingly.
     strategy:
       fail-fast: false
       matrix:
@@ -114,10 +61,6 @@ jobs:
           - arch: arm64
             runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
-    # Generous, because this is the from-source PHP build and a free runner has
-    # a fraction of a developer machine's parallelism. Not six hours, because
-    # the failure mode worth catching is a build that has stopped making
-    # progress rather than one that is merely slow.
     timeout-minutes: 120
     permissions:
       contents: read
@@ -125,51 +68,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      # For `just`, which owns the image's tag.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
-      # A docker-container builder, which the oci exporter below requires: the
-      # default docker driver cannot write an image index.
+      # The default docker driver cannot write an image index
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
-
-      # Tidiness, not reproducibility. A from-source PHP compile is not
-      # bit-reproducible and this does not make it one; do not describe it as
-      # if it did. What it buys is that two builds of a commit differ only
-      # where they genuinely differ rather than in what the clock said, which
-      # keeps image history and index diffs readable and makes
-      # org.opencontainers.image.created mean something instead of recording
-      # when a runner happened to be scheduled. Buildx reads SOURCE_DATE_EPOCH
-      # out of the environment by itself.
       - name: Pin the build clock to the commit
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "${GITHUB_ENV}"
-
-      # Keyed on the Containerfile, because everything that makes this build
-      # expensive is declared there - the extension list, the builder image
-      # digest, the Baikal version - so a real bump busts the cache and pays
-      # for itself while editing a test or this file does not. Local timings
-      # understate the value badly: ~4 minutes on a machine with eighteen cores
-      # to give it, and a free runner has a small fraction of that.
-      #
-      # The architecture is a namespace in the key, not an input to it. Layer
-      # caches are per-platform, so sharing one key between the two runners
-      # would mean each restoring gigabytes it cannot use and then overwriting
-      # the other's.
-      #
-      # The run id is on the end because actions/cache only saves on a miss of
-      # the exact key. Without it the first build for a given Containerfile
-      # writes the cache and every later run hits it exactly, saves nothing,
-      # and the cache is frozen at whatever that first build produced - so
-      # everything the image copies but the key does not cover (the Caddyfile,
-      # the bootstrap, upstream-migrations.sh) is rebuilt for ever. A rolling
-      # key always misses, so it always saves; the prefix restore-keys are what
-      # make the miss cheap. The cost is one entry per run against the
-      # repository's cache quota, and eviction of the oldest, which is the
-      # right trade and not an accident.
-      #
-      # Skipped entirely on the schedule: that run exists to rebuild the
-      # expensive stages from scratch, so restoring a cache would defeat it and
-      # saving one would write back an entry that had not built them.
       - name: Cache the build layers
         if: github.event_name != 'schedule'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -180,22 +84,7 @@ jobs:
             buildx-${{ matrix.arch }}-${{ hashFiles('Containerfile') }}-
             buildx-${{ matrix.arch }}-
 
-      # Exported to a file rather than pushed, because this runs on every pull
-      # request including forks, where there is no registry credential and must
-      # not be one. That file is what the engine legs load and what the publish
-      # job pushes, so no image is ever built twice.
-      #
-      # An OCI layout rather than a docker-format tarball, and that is the
-      # whole reason the attestations below are possible: attestations attach
-      # to an image index, and the docker exporter is the one exporter that
-      # cannot write an index. BuildKit's provenance is the only record of what
-      # actually went into this build - mode=max captures every argument,
-      # source and layer - and anything reconstructed after the fact is a
-      # guess. Carrying it in the layout keeps it without giving up
-      # build-once.
-      #
-      # The tag comes from the justfile so the suite and the build cannot
-      # disagree about which image is under test.
+      # An OCI layout is used to enable attestations
       - name: Build the image
         run: |
           image=$(just --evaluate IMAGE)
@@ -206,18 +95,14 @@ jobs:
             -f Containerfile -t "${image}"
           )
           if [ "${GITHUB_EVENT_NAME}" = schedule ]; then
-            # The canary run, and the only run that has to ignore the cache.
-            # These two stages are the only ones that reach outside this
-            # repository - one downloads the Baikal archive and checks it
-            # against a pinned SHA-256, the other compiles PHP and FrankenPHP
-            # in the pinned builder - and a cache hit on either means the
-            # weekly build tested nothing upstream at all.
+            # The canary run. These two stages are the only ones that reach
+            # outside this repository, so a cache hit on either means the
+            # weekly build tested nothing upstream.
             args+=(--no-cache-filter frankenphp-build --no-cache-filter fetch)
           else
-            # reset=true replaces the export instead of appending to it, which
-            # is what stops the directory growing every run until it is too
-            # large to restore. It needs Buildx 0.35 or later; the runner has
-            # 0.36.
+            # reset=true replaces the export rather than appending to it, which
+            # stops the directory growing every run until it is too large to
+            # restore. Needs Buildx 0.35 or later; the runner has 0.36.
             args+=(
               --cache-from type=local,src=/tmp/.buildx-cache
               --cache-to type=local,dest=/tmp/.buildx-cache,mode=max,reset=true
@@ -230,23 +115,12 @@ jobs:
         with:
           name: image-${{ matrix.arch }}
           path: /tmp/image.tar
-          # Long enough to be downloaded by the test legs and the publish job
-          # in the same run, and no longer: this is a build intermediate, not a
-          # release artefact.
           retention-days: 1
           if-no-files-found: error
 
   test:
     name: test
     needs: build
-    # Four legs: each architecture under each engine, every one of them running
-    # the single image its architecture's build job produced. The consumer runs
-    # rootless Podman and development runs Docker, and Podman rejects things
-    # Docker accepts, so an image proved under only one can ship a confinement
-    # contract that quietly does not hold on the other.
-    #
-    # fail-fast off: when legs diverge, which one broke is the finding, and
-    # cancelling the others throws that away.
     strategy:
       fail-fast: false
       matrix:
@@ -265,8 +139,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      # For `just`, which is what invokes the suite.
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -274,17 +146,6 @@ jobs:
           name: image-${{ matrix.arch }}
           path: /tmp
 
-      # skopeo rather than each engine's own `load`, because the archive is an
-      # OCI layout carrying attestation manifests beside the image, and skopeo
-      # is the tool on the runner that reads that shape into either engine's
-      # store. Its default --multi-arch=system takes the image manifest and
-      # leaves the unknown/unknown attestation manifest where it is, which is
-      # what an engine wants; the destination names the image outright, so
-      # nothing here depends on how an engine reads an archive's RepoTags.
-      #
-      # The inspect afterwards is not ceremony. It is the guard against the
-      # copy landing under a name the suite will not find, which would
-      # otherwise surface much later as a container that "does not exist".
       - name: Load the image under test
         env:
           ENGINE: ${{ matrix.engine }}
@@ -300,12 +161,6 @@ jobs:
           "${ENGINE}" image inspect "${image}" >/dev/null
           "${ENGINE}" --version
 
-      # The acceptance suite is the gate. It runs the image under the exact
-      # confinement the README promises - no capabilities, read-only root, uid
-      # 65532, one tmpfs, one volume - so what CI proves is what ships.
-      #
-      # ENGINE arrives as an environment variable rather than interpolated into
-      # the command, so the recipe that runs is a constant string.
       - name: Acceptance suite
         env:
           ENGINE: ${{ matrix.engine }}
@@ -314,14 +169,6 @@ jobs:
   scan:
     name: scan
     needs: build
-    # The same artifact the test legs load, scanned as a file rather than by
-    # name, so the bytes the scanner reads are the bytes that were tested and
-    # the bytes publish pushes. Scanning a rebuild would scan a different
-    # image, and scanning the published tag would find out too late.
-    #
-    # One leg per architecture, on a runner of that architecture, because each
-    # architecture's FrankenPHP is a separate compile and the layout carries
-    # only its own platform.
     strategy:
       fail-fast: false
       matrix:
@@ -355,10 +202,7 @@ jobs:
   publish:
     name: publish
     needs: [lint, test, scan]
-    # Pushes only from main, and only from a push or a hand-run dispatch. Not
-    # from a pull request, which has no credential and no business moving a
-    # tag; and explicitly not from the schedule, which exists to detect
-    # upstream breakage rather than to cut a release.
+    # Pushes from main only
     if: >-
       github.ref == 'refs/heads/main'
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -366,7 +210,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      packages: write # push the image, and with it the attestation below
+      packages: write # push the image and the attestation below
       id-token: write # Sigstore signs against the runner's OIDC identity
       attestations: write # actions/attest writes the provenance
     steps:
@@ -374,34 +218,23 @@ jobs:
         with:
           persist-credentials: false
 
-      # For jq, which the merge step reads its metadata file with.
+      # For jq
       - uses: jdx/mise-action@c2a87611a18de5b3828c5652fe268e992400cb5c # v4.3.0
 
-      # For `imagetools create`, which merges the two architectures. The action
-      # also stands up a docker-container builder; this job does not use one.
+      # For `imagetools create`
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
-          # The owner, not github.actor: actor is whoever clicked the
-          # dispatch button or pushed last, so it varies run to run for no
-          # reason. GHCR authorises on the token, not the name.
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Each artifact lands in its own directory under this path, which is what
-      # keeps two files both called image.tar apart.
+      # Each artifact lands in its own directory under this path
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: image-*
           path: /tmp/images
-
-      # The Containerfile is the single place the version is written, so the
-      # tag is read back out of it rather than kept in step with it by hand.
-      # Empty is a hard failure: publishing `ghcr.io/aryonoco/baikal:` and
-      # `:latest` from a silently unmatched grep would leave the only moving
-      # tag pointing at an image nobody can name.
       - name: Read the Baikal version from the Containerfile
         id: version
         run: |
@@ -411,23 +244,6 @@ jobs:
             exit 1
           fi
           echo "baikal=${v}" >> "${GITHUB_OUTPUT}"
-
-      # The layouts the suite passed against, pushed unchanged. Nothing is
-      # rebuilt here, which is the whole point: a from-source PHP build is not
-      # bit-reproducible, so a publish that rebuilt would ship an image no test
-      # had ever seen.
-      #
-      # skopeo rather than `docker load` and `docker push`, because that path
-      # goes through the daemon's image store and drops the attestation
-      # manifests on the way. `--all` copies the layout's whole index - the
-      # image and everything attached to it - byte for byte.
-      #
-      # One tag per architecture, because no CLI here can push a manifest to a
-      # registry without naming it; push-by-digest is a BuildKit exporter
-      # feature and reaching it would mean handing a registry credential to a
-      # job that builds fork pull requests. These tags are not scaffolding to
-      # be tidied away - they are the addressable halves the index points at,
-      # and they are useful to anyone debugging one architecture.
       - name: Push each tested architecture
         env:
           VERSION: ${{ steps.version.outputs.baikal }}
@@ -439,24 +255,6 @@ jobs:
               "oci-archive:/tmp/images/image-${arch}/image.tar" \
               "docker://ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
           done
-
-      # The multi-architecture index, assembled from the digests skopeo wrote
-      # rather than from the tags it wrote them to. A tag is a mutable pointer
-      # the instant it exists, so re-reading it here would leave a window in
-      # which the index could be built from something other than what this run
-      # pushed. imagetools copies rather than rebuilds, so :latest and
-      # :<version> resolve to those two indexes and everything attached to
-      # them.
-      #
-      # version, revision and created live here rather than as labels in the
-      # Containerfile: set once on the index, they cannot end up saying
-      # different things on the two architectures. created comes from the
-      # commit for the same reason SOURCE_DATE_EPOCH does - a wall clock would
-      # make two publishes of one commit differ for no reason.
-      #
-      # --metadata-file rather than scraping `imagetools inspect`: the digest
-      # is a first-class output, and taking it here saves a round-trip to the
-      # registry to ask what we just wrote.
       - name: Merge the architectures into one index
         id: merge
         env:
@@ -474,22 +272,9 @@ jobs:
             "ghcr.io/aryonoco/baikal@$(cat /tmp/digest-arm64)"
           digest=$(jq -er '."containerimage.descriptor".digest' /tmp/index.json)
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
-
-      # actions/attest, not the attest-build-provenance wrapper: GitHub's own
-      # release notes say v4 of that wrapper is exactly a wrapper and that new
-      # work should use this action. With no predicate and no sbom-path it
-      # produces the same SLSA build provenance the wrapper did.
-      #
-      # This answers a different question from the provenance inside the index.
-      # BuildKit's says what went into the image; this one says the image came
+      # BuildKit's is about what went into the image. This says the image came
       # out of this repository's workflow, signed against the runner's OIDC
-      # identity and checkable with `gh attestation verify` by someone who
-      # trusts neither GHCR nor us. Over the index digest, so one signature
-      # covers both architectures.
-      #
-      # No storage record: they can only be created for organisation-owned
-      # repositories, and this one is user-owned, so leaving it on would ask
-      # for an artifact-metadata: write permission that could never be used.
+      # identity
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-name: ghcr.io/aryonoco/baikal

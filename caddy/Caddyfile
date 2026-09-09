@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 {
-	# TLS is terminated upstream; this container speaks plain HTTP over a
-	# trusted network. Leaving auto_https on would make Caddy try to obtain
-	# certificates it neither needs nor can validate.
+	# container speaks plain HTTP over a trusted network. 
 	auto_https off
 	frankenphp
 	log {
@@ -12,21 +10,13 @@
 	}
 }
 
-# A port at or above 1024 is what keeps CAP_NET_BIND_SERVICE unnecessary. Do
-# not rely on net.ipv4.ip_unprivileged_port_start - that is a host setting this
-# image cannot guarantee.
 :8080 {
 	root /var/www/baikal/html
 
-	# RFC 6764 discovery. Relative targets, so the Location a client receives
-	# is correct behind a proxy that terminates TLS on a different host. 301 is
-	# within the codes RFC 6764 section 5 permits.
+	# RFC 6764 discovery
 	redir /.well-known/caldav /dav.php/ 301
 	redir /.well-known/carddav /dav.php/ 301
 
-	# php_server, not php_fastcgi: it supplies the try_files and split_path
-	# behaviour sabre/dav needs to receive PATH_INFO for URLs shaped like
-	# /dav.php/calendars/alice/default/event.ics
 	php_server
 
 	log {

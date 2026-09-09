@@ -5,25 +5,12 @@
 
 // There is no shell in this image, so nothing can chain "bootstrap && serve".
 // This program does the bootstrap and then REPLACES ITSELF with the server via
-// pcntl_exec, so FrankenPHP inherits PID 1 and receives signals directly.
-// PHP rather than shell for the same reason it would be anyway: baikal.yaml is
-// YAML and symfony/yaml already ships in Baikal's vendor tree.
-//
-// strict_types is on, so nothing below may lean on PHP's coercions. The two
-// symbols this file borrows from the image - Symfony's Yaml and the
-// BAIKAL_VERSION constant - arrive from the Baikal archive at build time and
-// are not in this repository; stubs/baikal-image.php declares exactly that
-// surface so PHPStan checks the calls rather than skipping them.
+// pcntl_exec so FrankenPHP inherits PID 1 and receives signals directly.
+// The two symbols this file borrows from the image come from the Baikal
+// archive at build time.
 
 declare(strict_types=1);
 
-// Both of these are COPYed in from the Baikal release archive at build time, so
-// either one missing means the image was assembled wrong rather than that the
-// deployment is misconfigured. PHP's own include fatal names the path but says
-// nothing about what the path was for, and a container that dies before its
-// first line of output is the hardest kind to diagnose. Guarding the requires
-// is also what lets a level-max analysis run over this file at all, on a
-// machine where /var/www/baikal does not exist.
 if (!is_file('/var/www/baikal/vendor/autoload.php')) {
     fail('/var/www/baikal/vendor/autoload.php is missing: this is not a complete Baikal image');
 }
@@ -74,11 +61,6 @@ foreach ([$configDir, $specificDir . 'db'] as $dir) {
 $haveConfig = file_exists($configFile);
 $haveDb     = file_exists($dbFile);
 
-// A database without its config is recoverable; a config without its database
-// is not, because auth_realm is baked into every stored password hash. Creating
-// an empty database here would produce a service that is up, healthy and empty,
-// which is strictly worse than one that refuses to start - and the next backup
-// would snapshot that over the last good copy.
 if ($haveConfig && !$haveDb) {
     fail("$configFile exists but $dbFile does not. Refusing to create an empty "
        . 'database beside an existing config: restore both together, they are '
@@ -95,37 +77,27 @@ if (!$haveConfig) {
             'timezone'              => env('BAIKAL_TIMEZONE', 'UTC'),
             'card_enabled'          => true,
             'cal_enabled'           => true,
-            // Upstream defaults to Digest, which breaks Windows 10 clients,
-            // broke DAVx5 4.5.17, and is the one auth mode a path-rewriting
-            // proxy silently kills.
+            // Upstream defaults to Digest but that's problematic
             'dav_auth_type'         => env('BAIKAL_DAV_AUTH_TYPE', 'Basic'),
-            // sha256 of "admin:<realm>:<password>", username the literal string
-            // admin. DAV users use md5 into users.digesta1 - a different scheme
-            // entirely, managed through the admin UI.
+            // sha256 of "admin:<realm>:<password>", username: admin. DAV
+            // users use md5 into users.digesta1, managed through the admin UI.
             'admin_passwordhash'    => hash('sha256', 'admin:' . $realm . ':' . $password),
             'failed_access_message' => 'user %u authentication failure for Baikal',
             'auth_realm'            => $realm,
-            // Empty so it is derived from the request. Setting it is for
-            // sub-path mounting and is widely broken behind reverse proxies.
             'base_uri'              => '',
-            // Baikal registers its iMIP mail plugin - its only outbound traffic
-            // - if and only if this is non-empty, and it is non-empty in both
-            // the shipped config and the installer default. Empty is what lets
-            // the deployment deny all egress.
+            // Baikal registers its iMIP mail plugin if this is non-empty
             'invite_from'           => getenv('BAIKAL_INVITE_FROM') ?: '',
         ],
         'database' => [
             'backend'        => 'sqlite',
             'sqlite_file'    => $dbFile,
-            // Vestigial: a leftover from the legacy config.system.php that
-            // nothing now consumes.
+            // Vestigial: a leftover from the legacy config.system.php 
             'encryption_key' => '',
         ],
     ];
 
     file_put_contents($configFile, Yaml::dump($config, 4, 4));
-    // Must stay writable on every request, not merely at install:
-    // Tools::assertBaikalIsOk() checks it and Baikal refuses to serve without it.
+    // Must stay writable on every request
     chmod($configFile, 0o640);
     info("wrote $configFile");
 }
@@ -148,18 +120,13 @@ if (!$haveDb) {
     info("created $dbFile");
 }
 
-// Its absence re-opens the unauthenticated /admin/install/ database wizard, so
-// this is security state, not a convenience marker.
+// Its absence re-opens the unauthenticated /admin/install/ database wizard
 if (!file_exists($installLock)) {
     touch($installLock);
     info("wrote $installLock");
 }
 
-// Version drift. When BAIKAL_VERSION is newer than configured_version, Baikal
-// 302s EVERY request - dav.php included - to /admin/install/ until the upgrade
-// runs. For a CalDAV server that is a total outage which every client reports
-// as an auth or sync failure, so clearing it here is the difference between a
-// digest bump being a restart and being an incident.
+// Version drift. 
 $onDisk = Yaml::parseFile($configFile);
 if (!is_array($onDisk) || !isset($onDisk['system']) || !is_array($onDisk['system'])) {
     fail("$configFile has no system section. Refusing to guess.");
@@ -167,18 +134,14 @@ if (!is_array($onDisk) || !isset($onDisk['system']) || !is_array($onDisk['system
 
 $configured = $onDisk['system']['configured_version'] ?? null;
 
-// Not merely a null check: a version that parsed as a float or a list would
-// otherwise reach version_compare() and be coerced, and 0.10 is not 0.10.0.
 if (!is_string($configured) || $configured === '') {
     fail("$configFile has no usable system.configured_version. Refusing to guess.");
 }
 
 if (version_compare(BAIKAL_VERSION, $configured, '>')) {
     // Upstream's VersionUpgrade::upgrade() gates every schema change on a
-    // threshold at or below 0.10.0. At or above that it performs no DDL and
-    // does nothing but write this key - so this is the same operation, not an
-    // imitation of it. test/upstream-migrations.sh fails the build if that
-    // stops being true.
+    // threshold, so this is the same operation.
+    // test/upstream-migrations.sh fails the build if upstream changes.
     if (version_compare($configured, '0.10.0', '<')) {
         fail("configured_version $configured is below 0.10.0 and needs a real "
            . 'schema migration this image will not perform. Back up /data, then '
@@ -195,8 +158,6 @@ if (version_compare(BAIKAL_VERSION, $configured, '>')) {
 
 info('ready, Baikal ' . BAIKAL_VERSION);
 
-// Replace this process with the server. Not a fork: pcntl_exec overlays the
-// process image, so FrankenPHP becomes PID 1 and gets SIGTERM directly. No
-// supervisor, no signal-forwarding wrapper, nothing left behind to reap.
+// Replace this process with the server
 pcntl_exec(SERVER_BIN, ['run', '--config', CADDYFILE]);
 fail('pcntl_exec failed to start ' . SERVER_BIN);

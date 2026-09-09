@@ -1,14 +1,8 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-# The Containerfile copies named paths and never `COPY . .`, so nothing here is
-# load-bearing today. It exists so that stays true by accident as well as by
-# intent: the image's whole claim is that no build toolchain reaches it, and
-# vendor/ is now a real directory in this tree that would contradict that if a
-# future COPY were ever written broadly.
-vendor/
 
-# Never part of a build context, and both are gitignored besides.
+vendor/
 .agents/
 .superpowers/
 .git/

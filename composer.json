@@ -1,23 +1,15 @@
 {
-    "_comment": [
-        "Licensing lives in composer.json.license: JSON has no comment syntax,",
-        "and an SPDX tag written as a string value ends up with the closing",
-        "quote inside the expression, which reuse rejects.",
-        "",
-        "This repository is not a PHP project and ships no PHP of its own into",
-        "the image - the Baikal release archive already carries its vendor tree.",
-        "There is deliberately no require section, no autoload and no name here:",
-        "the only thing Composer is asked to do is pin the analyser that reads",
-        "the two PHP files this repository does own."
-    ],
-    "license": "BSD-2-Clause",
-    "require-dev": {
-        "phpstan/phpstan": "2.2.13"
+  "_comment": [
+    "This repository is not a PHP project and ships no PHP of its own"
+  ],
+  "license": "BSD-2-Clause",
+  "require-dev": {
+    "phpstan/phpstan": "2.2.13"
+  },
+  "config": {
+    "platform": {
+      "php": "8.5.10"
     },
-    "config": {
-        "platform": {
-            "php": "8.5.10"
-        },
-        "sort-packages": true
-    }
+    "sort-packages": true
+  }
 }

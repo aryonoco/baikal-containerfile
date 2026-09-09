@@ -3,18 +3,16 @@
 
 # baikal-containerfile
 
-A [Baikal](https://github.com/sabre-io/Baikal) CalDAV/CardDAV image that runs
-with **no Linux capabilities, a read-only root filesystem, and a non-root user**.
+A security hardened [Baikal](https://github.com/sabre-io/Baikal) image.
 
 Published as `ghcr.io/aryonoco/baikal`.
 
-## Why this exists
+## Base
 
 This image runs [FrankenPHP](https://github.com/php/frankenphp): PHP 8.5 and Caddy
-in a single mostly-static binary, on a distroless base. One process, so a dead PHP
-kills the container. No shell and no package manager in the image at all.
+in a single mostly-static binary on a Debian Trixie-based distroless base.
 
-## Container Layout
+## Container Features
 
 | Property | Value |
 |---|---|
@@ -31,7 +29,7 @@ kills the container. No shell and no package manager in the image at all.
 
 **Health check must assert 401.** Every Baikal failure mode (unwritable config, missing database, unwritable database directory) returns **200** with an exception page, so `curl --fail` reports a dead server as healthy.
 
-## Running it
+## Running
 
 ```bash
 podman run -d --name baikal \
@@ -44,14 +42,14 @@ podman run -d --name baikal \
   ghcr.io/aryonoco/baikal:0.12.1
 ```
 
-## Configuration
+## Env Vars
 
 | Variable | Default | Notes |
 |---|---|---|
 | `BAIKAL_ADMIN_PASSWORD` | *none* | **Required on first run.** Create-only |
 | `BAIKAL_AUTH_REALM` | `BaikalDAV` | **Cannot be changed after first run** — it is an input to every password hash |
 | `BAIKAL_DAV_AUTH_TYPE` | `Basic` | Upstream defaults to Digest, which breaks Windows and DAVx5 |
-| `BAIKAL_INVITE_FROM` | *empty* | Empty is what keeps outbound network at zero |
+| `BAIKAL_INVITE_FROM` | *empty* | Keeps outbound network at zero |
 | `BAIKAL_TIMEZONE` | `UTC` | |
 
 Settings are written once. Changing a variable after first run has no effect.

@@ -6,69 +6,31 @@
 declare(strict_types=1);
 
 /*
- * Everything the acceptance suite needs to read or assert from *inside* the
- * container.
- *
- * This exists as a file rather than as `php-cli -r '<code>'` arguments because
- * that form nests PHP inside a single-quoted shell string that itself contains
- * SQL string literals and PHP string literals, and bash checks none of it: a
- * mis-escaped quote yields an empty string rather than an error, and the suite
- * happily asserts against the empty string. Two real defects of exactly that
- * shape were found in the earlier version - a capability check that compared
- * against a line still carrying its own `CapEff` label, and `shell_exec()`
- * calls in an image that deliberately has no shell. A real file gets a parser,
- * strict types, exceptions and a stack trace.
- *
- * There is no shell in this image, so nothing here may use shell_exec(),
- * exec(), system(), passthru(), proc_open() or backticks. Read /proc and the
- * filesystem directly; that is both possible and more direct.
- *
- * It also has no dependencies. symfony/yaml ships in Baikal's vendor tree and
- * would parse baikal.yaml better than the two narrow accessors below do, but
- * requiring that tree would stop this file being analysable on its own, and
- * being checkable is the whole reason it is a file.
+ 
+ * There is no shell in this image. It also has no dependencies. 
  *
  * Output protocol: one tab-separated record per assertion,
  *
  *     ok<TAB>what<TAB>expected<TAB>found
  *     FAIL<TAB>what<TAB>expected<TAB>found
- *
- * which test/acceptance.sh turns into its own pass()/fail(), so host-side and
- * in-container assertions share one counter and one log format. Anything else
- * on stdout or stderr is passed through as a diagnostic. Exit status is 0 only
- * when every assertion in the subcommand passed; 1 when one did not; 2 when
- * the invocation itself was wrong. Silence is never success: a subcommand that
- * emits no records at all is treated by the caller as a failure.
  */
 
 const LOOPBACK_ORIGIN = 'http://127.0.0.1:8080';
 
 /**
- * Distroless ships no shell. These are the three an intrusion would reach for
- * first, and the three a careless base-image change would reintroduce.
+ * The ones most likely to be the target of an intrusion.
  */
 const FORBIDDEN_SHELLS = ['/bin/sh', '/bin/bash', '/bin/dash'];
 
-/** A capability mask with every bit clear, as /proc renders it today. */
 const NO_CAPABILITIES = '0000000000000000';
-
-/** Public, anycast, and answers on 443 anywhere egress exists. */
 const EGRESS_PROBE_HOST = '1.1.1.1';
 const EGRESS_PROBE_PORT = 443;
 const EGRESS_PROBE_TIMEOUT = 3;
-
-/** Where Baikal's own credential check reads from: PDOBasicAuth.php:75. */
 const DIGEST_TABLE = 'users';
 const DIGEST_COLUMN = 'digesta1';
 
 /**
  * Collects assertions and renders them in the record format above.
- *
- * Nothing here returns a bare false on failure. A subcommand that cannot even
- * reach the thing it is meant to assert on throws, and the dispatcher turns
- * that into a failed assertion naming the exception. The distinction matters:
- * "CapEff is not zero" and "there is no CapEff line to read" are different
- * defects and must not both surface as a quiet mismatch against ''.
  */
 final class Assertions
 {
@@ -99,7 +61,7 @@ final class Assertions
         return self::$failures;
     }
 
-    /** Tabs and newlines are the record separators, so no field may carry one. */
+    /** Tabs and newlines are the record separators so they can't be present in any field. */
     private static function oneLine(string $text): string
     {
         return trim(strtr($text, ["\t" => ' ', "\n" => ' ', "\r" => ' ']));
@@ -109,10 +71,8 @@ final class Assertions
 // --- filesystem and config helpers ------------------------------------------
 
 /**
- * The image sets BAIKAL_PATH_CONFIG and BAIKAL_PATH_SPECIFIC, and the framework
- * concatenates them directly with a file name, so the trailing slash is load
- * bearing (Flake/Framework.php:168-182). Reading them here rather than
- * hardcoding /data keeps this file honest if the image's layout ever moves.
+ * The image sets BAIKAL_PATH_CONFIG and BAIKAL_PATH_SPECIFIC, and the
+ * framework concatenates them directly with a file name.
  */
 function pathFromEnvironment(string $name, string $fallback): string
 {
@@ -145,21 +105,7 @@ function readOrThrow(string $path): string
 }
 
 /**
- * Matches one `key: value` line of baikal.yaml, capturing the indent and key as
- * group 1 and the value as group 2.
- *
- * baikal.yaml is written by baikal-bootstrap through symfony/yaml's dumper, so
- * it is a two-level mapping of plain scalars: no anchors, no flow collections,
- * no block scalars, no repeated keys.
- *
- * Only the reader below proves that. It counts every match and refuses anything
- * but exactly one. The writer cannot: preg_replace with a limit of 1 rewrites
- * the first match and counts that one, so a duplicated key would be quietly
- * half-rewritten and still report a replacement count of 1. What closes the gap
- * is that setVersion() never writes without reading the value back through the
- * reader afterwards, so a second occurrence is caught there instead. Between
- * them the narrowness is checked rather than assumed, which is the part a bare
- * preg_replace on the same file was missing.
+ * Matches one `key: value` line of baikal.yaml
  */
 function configLinePattern(string $key): string
 {
@@ -208,12 +154,6 @@ function writeConfigScalar(string $key, string $value): void
     }
 }
 
-/**
- * auth_realm is an input to every stored password hash, so seeding a user with
- * a guessed realm produces a row that exists and never authenticates - a 401
- * that looks like a broken server rather than a broken test. Take it from the
- * config the server itself is reading.
- */
 function authRealm(): string
 {
     $realm = readConfigScalar('auth_realm');
@@ -236,11 +176,6 @@ function openDatabase(): PDO
     ]);
 }
 
-/**
- * PDOStatement::fetchColumn() is mixed by definition - a column value, or false
- * for no row. Take the mixed in one place, narrow it here, and let everything
- * downstream work in strings.
- */
 function columnText(mixed $value): string
 {
     if ($value === false) {
@@ -254,12 +189,7 @@ function columnText(mixed $value): string
 }
 
 /**
- * One HTTP request against the container's own listener, reduced to its status
- * code. Deliberately no 2xx matching and no failure-on-error: every Baikal
- * failure mode - unwritable config, missing database, unwritable database
- * directory - answers 200 with an exception page, so only an exact code proves
- * anything. ignore_errors keeps the response instead of discarding a 4xx as a
- * stream error, which is the whole point when 401 is the healthy answer.
+ * HTTP request against the container's listener
  */
 function loopbackStatus(string $method, string $path, ?string $credentials = null): string
 {
@@ -280,9 +210,7 @@ function loopbackStatus(string $method, string $path, ?string $credentials = nul
         return 'no response';
     }
 
-    // The http wrapper parks the response's header lines here. Read through the
-    // stream's own metadata rather than the $http_response_header magic local,
-    // which is invisible to any static analysis and to the reader.
+    // http wrapper parks the response's header lines here.
     $metadata = stream_get_meta_data($stream);
     fclose($stream);
 
@@ -305,28 +233,13 @@ function loopbackStatus(string $method, string $path, ?string $credentials = nul
 
 // --- subcommands ------------------------------------------------------------
 
-/**
- * The single most load-bearing claim in the design. baikal-bootstrap does its
- * work and then pcntl_exec()s the server, which overlays the process image
- * rather than forking, so FrankenPHP inherits PID 1 and takes SIGTERM
- * directly. `inspect --format '{{.Path}}'` only ever echoes the configured
- * entrypoint back, so asking the container what its own PID 1 is called is the
- * only way to see whether the hand-off actually happened.
- */
 function assertPid1(): void
 {
     Assertions::equals('PID 1 comm', 'frankenphp', trim(readOrThrow('/proc/1/comm')));
 }
 
 /**
- * Extract one capability mask from /proc/self/status as a value.
- *
- * The line is `CapEff:\t0000000000000000`, and the label itself contains both
- * 'a' and 'f'. An earlier version of this check globbed the whole line for
- * [1-9a-f] and so could never pass, in either direction - which is why this
- * captures the hex word and nothing else. The width is not pinned, because the
- * comparison that follows is numeric and a wider all-zero field is still no
- * capabilities.
+ * Extract capability mask from /proc/self/status as a value.
  */
 function capabilityMask(string $status, string $field): string
 {
@@ -345,11 +258,6 @@ function assertCaps(): void
 
     foreach (['CapEff', 'CapPrm'] as $field) {
         $mask = capabilityMask($status, $field);
-
-        // Compared as a number, not as text: hexdec() of an all-clear mask is
-        // int(0) and of anything else is non-zero, so neither a change of field
-        // width nor a formatting accident can make a real capability read as
-        // none.
         Assertions::record(
             hexdec($mask) === 0,
             "$field, every capability bit clear",
@@ -359,11 +267,6 @@ function assertCaps(): void
     }
 }
 
-/**
- * Absence, not merely non-executability: the base is distroless and that is the
- * point. is_link() is checked too, because a dangling symlink is invisible to
- * file_exists() and would still be a shell path reappearing in the image.
- */
 function assertNoShell(): void
 {
     foreach (FORBIDDEN_SHELLS as $path) {
@@ -380,10 +283,7 @@ function assertNoShell(): void
 }
 
 /**
- * Reading `docker network inspect --format '{{.Internal}}'` tests the engine,
- * not us. This measures the same claim from the only place it matters: inside
- * the container, where a connect that succeeds means the deployment could fail
- * open to the internet.
+ * Measures from inside the container.
  */
 function probeEgress(): void
 {
@@ -426,11 +326,7 @@ function probeLoopback(string $username, string $password): void
 }
 
 /**
- * Wait for the listener to answer at all, for a container whose published port
- * the host cannot reach - which is every container on an --internal network.
- * Any HTTP status counts as serving here; what that status must be is a
- * separate assertion, deliberately, because "answered 500" and "never answered"
- * are different failures.
+ * Any HTTP status counts as serving here
  */
 function waitServing(string $seconds): void
 {
@@ -460,15 +356,7 @@ function waitServing(string $seconds): void
 /**
  * DAV users authenticate on md5("username:realm:password") stored in
  * users.digesta1 (Core/Frameworks/Baikal/Core/PDOBasicAuth.php:75). The admin
- * account uses sha256("admin:realm:password") in baikal.yaml instead - a
- * different scheme entirely, and conflating the two produces a user who exists
- * and can never log in.
- *
- * Written through prepared statements and read straight back. The version this
- * replaced built the INSERT by interpolating into a double-quoted PHP string
- * nested in a single-quoted shell argument, and discarded both the output and
- * the exit status, so a failed insert was indistinguishable from a successful
- * one until a PROPFIND 401'd several checks later.
+ * account uses sha256("admin:realm:password") in baikal.yaml 
  */
 function seedUser(string $username, string $password): void
 {
@@ -482,8 +370,7 @@ function seedUser(string $username, string $password): void
     );
     $insertUser->execute([$username, $digest]);
 
-    // email is nullable and unused by the DAV auth path; passing it explicitly
-    // records that the column exists rather than leaving it to a default.
+    // email is nullable and unused by the DAV auth path
     $insertPrincipal = $database->prepare(
         'INSERT INTO principals (uri, email, displayname) VALUES (?, ?, ?)',
     );
@@ -511,11 +398,7 @@ function seedUser(string $username, string $password): void
 }
 
 /**
- * Simulate version drift. When configured_version is older than the image's
- * BAIKAL_VERSION, Baikal 302s every request - dav.php included - to
- * /admin/install/, which is a total CalDAV outage that every client reports as
- * an auth failure. The suite writes the drift here so it can prove the
- * entrypoint clears it rather than serving it.
+ * Simulate version drift
  */
 function setVersion(string $version): void
 {
@@ -533,11 +416,7 @@ function setVersion(string $version): void
 }
 
 /**
- * Take the database away from beside its config. baikal-bootstrap must refuse
- * to start rather than create an empty one: auth_realm is baked into every
- * stored hash, so a fresh database beside an old config is a server that is up,
- * healthy and empty, and the next backup would write that over the last good
- * copy.
+ * Take the database away 
  */
 function removeDatabase(): void
 {
@@ -632,10 +511,6 @@ function main(array $arguments): int
     try {
         ($command['handler'])(...$operands);
     } catch (Throwable $problem) {
-        // A subcommand that could not reach the thing it asserts on is a failed
-        // assertion, not a crash with no record: the caller counts records, and
-        // an exception that produced none would otherwise read as nothing
-        // having happened at all.
         Assertions::record(
             false,
             "$name completed",
@@ -648,9 +523,7 @@ function main(array $arguments): int
 }
 
 /**
- * $argv exists only when register_argc_argv is on. That is the CLI default, but
- * it is a php.ini setting rather than a guarantee, and $_SERVER carries the same
- * list in a form that can be narrowed instead of assumed.
+ * $argv exists only when register_argc_argv is on. 
  *
  * @return list<string>
  */
@@ -668,7 +541,8 @@ function commandLine(): array
         }
     }
 
-    // Drop the script name; everything after it is the subcommand and operands.
+    // Drop the script name. Everything after it is the subcommand and
+    // operands.
     return array_slice($arguments, 1);
 }
 

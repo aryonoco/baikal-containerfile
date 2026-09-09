@@ -1,14 +1,6 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-# Every optional check, at the lowest severity ShellCheck reports. The suite is
-# the only thing that proves the confinement contract, so a bug that hides in it
-# is a bug that ships: SC2312 in particular (a command substitution whose exit
-# status is discarded) is exactly how a failing command masquerades as a passing
-# check.
 enable=all
 severity=style
-
-# test/acceptance.sh sources test/lib.sh, and without this the `source` line is
-# unresolvable, so every helper it defines reads as an unknown command.
 external-sources=true

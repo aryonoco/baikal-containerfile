@@ -2,45 +2,17 @@
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
 includes:
-    # Every check that is on its way to becoming the default in the next major.
-    # Turning them on now means an upgrade is a version bump rather than a
-    # backlog. The path is relative to this file, so it resolves inside the
-    # Composer install rather than against the working directory.
     - vendor/phpstan/phpstan/conf/bleedingEdge.neon
 
 parameters:
     level: max
-
-    # 8.5, written out rather than inherited from whichever PHP happens to run
-    # the analyser. That is the version the image's FrankenPHP build ships, so
-    # the findings describe the runtime the entrypoint actually meets; and it
-    # means a machine with an older PHP cannot reach a different verdict from
-    # CI's. The analyser's own PHP and the analysis target are separate
-    # settings, and only this one is a fact about the image.
     phpVersion: 80500
-
-    # Exactly the two files this repository owns. Baikal's own tree is not here
-    # and must never be analysed: it is fetched at build time, it is upstream's
-    # code, and pointing a level-max analysis at it would produce thousands of
-    # findings about software we do not maintain.
-    #
-    # baikal-bootstrap has no extension - it is an entrypoint on PATH - and
-    # fileExtensions does not need widening for it: naming a file here analyses
-    # it whatever it is called, and only directory walks are filtered by
-    # extension. Checked by planting an error in it and watching this fail.
     paths:
         - rootfs/usr/local/bin/baikal-bootstrap
         - test/in-container.php
 
-    # Scanned for definitions, not analysed. See stubs/baikal-image.php.
+    # Scanned for definitions, not analysed.
     scanFiles:
         - stubs/baikal-image.php
-
-    # BAIKAL_VERSION follows the build argument of the same name, so the value
-    # in the stub is a shape and not a fact about any particular image. Nothing
-    # depends on this today - the analysis is clean with and without it - but
-    # without it PHPStan is entitled to reason from '0.12.1' specifically, and
-    # the first finding that produced would be an artefact of the stub rather
-    # than a defect in the entrypoint.
     dynamicConstantNames:
         - BAIKAL_VERSION

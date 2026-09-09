@@ -1,28 +1,10 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-# The single source of truth for every tool version this repository uses. The
-# justfile runs its recipes through `mise exec`, and CI installs from this file
-# and nothing else, so no gate can quietly resolve to whichever build of a
-# linter a machine happened to have on PATH.
-#
-# PHP is the one deliberate exception, and composer.lock pins PHPStan instead.
-# See CLAUDE.md, "Where the toolchain comes from", for why.
-
 [tools]
-# Backends are named explicitly rather than relying on the registry's short
-# names: the registry is free to change which backend a short name resolves to,
-# and this file is supposed to say exactly what gets installed.
 "aqua:hadolint/hadolint" = "2.15.1"
 "aqua:koalaman/shellcheck" = "0.11.0"
 "pipx:reuse" = "6.2.0"
-
-# `reuse` is not in mise's registry at all, so the pipx backend above is not a
-# preference - it is the only way to name it.
-
-# just runs the gates, so it is pinned like the gates are. Without this a CI
-# runner would take whatever `just` its image ships, and a recipe syntax added
-# after that version would fail there and nowhere else.
 "aqua:casey/just" = "1.58.0"
 
 "aqua:jqlang/jq" = "1.8.2"
