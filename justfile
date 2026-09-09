@@ -109,9 +109,8 @@ actions-update:
 # Audit the workflow
 workflow-audit:
     # The auditor persona is the widest of the three and accepts false
-    # positives; a finding it raises that is genuinely wrong is fixed or
-    # reported, not silenced. The token turns on the audits that ask GitHub
-    # whether a pinned SHA is really in the action's repository.
+    # positives. The token turns on the audits that ask GitHub whether a pinned
+    # SHA is really in the action's repository.
     GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" \
       zizmor --persona=auditor .github/workflows
 
