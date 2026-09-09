@@ -75,10 +75,39 @@ breaking change.
 
 ## Key commands
 
+- `just setup` — install the pinned toolchain. One command on a fresh clone
 - `just build` — build the image locally
 - `just test` — build, then run the acceptance suite against it
 - `just lint` — hadolint, ShellCheck, PHPStan and `reuse lint`, each pinned to an exact version and invoked exactly as CI invokes it
 - `just ci` — everything CI runs. Run this before committing
+
+## Where the toolchain comes from
+
+- **`mise.toml` is the single source of truth for tool versions.** hadolint,
+  ShellCheck, reuse, just, and the trivy/pinact/zizmor the CI workflow will use
+  are all pinned there, and CI installs from that file rather than keeping a
+  list of its own. Every justfile recipe runs through `mise exec`, so a gate
+  uses the pinned binary even on a machine that has the same tool on PATH —
+  without that the pin would be decoration
+- **PHP is the deliberate exception, and it is a real one.** `php` and
+  `composer` come from the host, not from mise: mise's only PHP backend
+  compiles PHP from source, which is minutes added to every CI run in order to
+  analyse two files. PHPStan is therefore pinned by `composer.lock`, and
+  `phpstan.neon` sets `phpVersion` so the *analysis target* is fixed no matter
+  which PHP runs the analyser. The local PHP is the same 8.5 the image's
+  FrankenPHP build ships, which is why running the analyser on the host is not
+  a compromise — it meets the language the entrypoint actually runs on
+- **So this repository now carries `composer.json`, `composer.lock` and a
+  `vendor/`, and that deserves an explanation**, because the image's whole
+  claim is that no PHP toolchain reaches it. None of it does. The Containerfile
+  copies named paths and never the build context, `vendor/` is gitignored, and
+  `.dockerignore` excludes it too so that a `COPY` written broadly at some
+  later date cannot quietly change the answer. `composer.json` has no `require`
+  section, no `autoload` and no package name on purpose: Composer is asked to
+  install a linter here, not to make this a PHP project
+- Licensing for `composer.json` and `composer.lock` lives in `.license`
+  sidecars. JSON has no comment syntax, and an SPDX tag written as a string
+  value carries the closing quote into the expression, which `reuse` rejects
 
 ## Upstream facts — established from the 0.12.1
 
