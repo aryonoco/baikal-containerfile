@@ -3,3 +3,6 @@
 
 # Agent working files: specs, plans, progress ledgers.
 .agents/
+
+# Superpowers SDD workspace: ledgers, briefs, review packages.
+.superpowers/
