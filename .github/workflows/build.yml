@@ -44,9 +44,18 @@ on:
     # if it could: BUILDER_IMAGE and RUNTIME_IMAGE are pinned by immutable
     # @sha256: digests and the Baikal archive by checksum, so a rebuild on an
     # unchanged Containerfile re-pulls the same bytes and produces the same
-    # content. Renovate is the update path, and a digest bump arriving as a
-    # reviewable pull request is better than a blind weekly rebuild: it leaves
-    # a record of what moved and when.
+    # content.
+    #
+    # That is not the whole list, and the sentence above would read as though
+    # it were. The fetch stage is `FROM debian:13-slim`, a floating tag, and it
+    # does move. It changes nothing here: the only thing that stage contributes
+    # to the final image is an archive whose SHA-256 is verified before it is
+    # unpacked, so it is a checksum-gated unzip and a newer debian unzips the
+    # same bytes. Worth naming rather than leaving to be found.
+    #
+    # Renovate is the update path, and a digest bump arriving as a reviewable
+    # pull request is better than a blind weekly rebuild: it leaves a record of
+    # what moved and when.
     #
     # For any of that to be true the scheduled run has to reach past the layer
     # cache, and it does - see the build job. A weekly build that restored the

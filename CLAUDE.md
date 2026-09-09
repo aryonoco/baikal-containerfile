@@ -63,7 +63,10 @@ breaking change.
   this repository collects them on its own.** `BUILDER_IMAGE` and
   `RUNTIME_IMAGE` are pinned by immutable `@sha256:` and the Baikal archive by
   checksum, so a rebuild on an unchanged Containerfile re-pulls identical bytes
-  and produces identical content. **Renovate is the update path**: a digest
+  and produces identical content. The fetch stage's `debian:13-slim` is the one
+  floating tag and does move; it changes nothing, because all that stage gives
+  the final image is an archive verified against a pinned SHA-256 before it is
+  unpacked. **Renovate is the update path**: a digest
   bump arrives as a reviewable pull request that leaves a record of what moved
   and when, which a blind rebuild does not. CI's weekly run exists to catch
   upstream breakage early — a release URL that moved, a builder that changed
