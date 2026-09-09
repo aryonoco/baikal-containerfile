@@ -146,6 +146,13 @@ jobs:
           name: image-${{ matrix.arch }}
           path: /tmp
 
+      # Ubuntu restricts unprivileged user namespaces through AppArmor, and
+      # rootless podman cannot start without them. Debian, which this image is
+      # deployed on, carries no such restriction.
+      - name: Allow unprivileged user namespaces
+        if: matrix.engine == 'podman'
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Load the image under test
         env:
           ENGINE: ${{ matrix.engine }}
