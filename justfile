@@ -40,6 +40,10 @@ lint:
     # Piped with -r so an empty match is a pass. A bare `shellcheck test/*.sh`
     # exits 123 ("No files specified") before test/ exists, which would make
     # `just lint` fail for every task up to Task 5.
+    #
+    # enable=all and severity=style live in .shellcheckrc rather than on this
+    # line, so an editor's ShellCheck and CI's reach the same verdict. Nothing
+    # in this tree carries a `shellcheck disable=` directive and nothing may.
     git ls-files '*.sh' | xargs -r uvx --from {{SHELLCHECK}} shellcheck
     uvx --from {{REUSE}} reuse lint
 # Everything CI runs
