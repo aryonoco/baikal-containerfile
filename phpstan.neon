@@ -4,12 +4,22 @@
 includes:
     # Every check that is on its way to becoming the default in the next major.
     # Turning them on now means an upgrade is a version bump rather than a
-    # backlog. The path is inside the phpstan/phpstan image, which is the only
-    # place this config is ever run from.
-    - /composer/vendor/phpstan/phpstan/conf/bleedingEdge.neon
+    # backlog. The path is relative to this file, so it resolves inside the
+    # Composer install that composer.lock pins - which is also what makes the
+    # include safe to write at all: it names a file whose contents are fixed by
+    # the same lock as the analyser reading it.
+    - vendor/phpstan/phpstan/conf/bleedingEdge.neon
 
 parameters:
     level: max
+
+    # 8.5, written out rather than inherited from whichever PHP happens to run
+    # the analyser. That is the version the image's FrankenPHP build ships, so
+    # the findings describe the runtime the entrypoint actually meets; and it
+    # means a machine with an older PHP cannot reach a different verdict from
+    # CI's. The analyser's own PHP and the analysis target are separate
+    # settings, and only this one is a fact about the image.
+    phpVersion: 80500
 
     # Exactly the two files this repository owns. Baikal's own tree is not here
     # and must never be analysed: it is fetched at build time, it is upstream's

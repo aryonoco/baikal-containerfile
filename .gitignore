@@ -6,3 +6,7 @@
 
 # Superpowers SDD workspace: ledgers, briefs, review packages.
 .superpowers/
+
+# Composer's install tree for the PHPStan pin. composer.lock is committed and is
+# the pin; this is just what it expands to.
+vendor/

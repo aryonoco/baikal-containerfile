@@ -17,12 +17,8 @@ IMAGE := "localhost/baikal:dev"
 # reading it; and a gate configured differently in the two places makes
 # `just ci` a statement about a pipeline that does not exist. Bumping a pin is
 # then a commit, reviewed like any other, with the new findings in the diff.
-# The pins themselves live in mise.toml, bar the one gate below that mise
-# cannot supply.
-
-# By digest, not :latest - a tag that moves on its own is not a gate, it is a
-# schedule.
-PHPSTAN := "ghcr.io/phpstan/phpstan:2.2.13@sha256:fda102448a1f9a771bc082edf5e0d04d96491f72d5d25edf7499ae94c14b08a7"
+# The pins themselves live in mise.toml, bar PHPStan's, which composer.lock
+# holds because mise's only PHP backend builds PHP from source.
 
 default:
     @just --list
@@ -33,8 +29,13 @@ setup:
     # A shebang recipe deliberately: this is the one recipe that must not run
     # through the `mise exec` shell above, because on a fresh clone the tools
     # that wrapper resolves are precisely what is missing.
+    #
+    # PHP and Composer themselves are not installed here and are expected on
+    # PATH. mise can only offer a PHP it compiles from source, which is minutes
+    # of every CI run to analyse two files.
     set -euo pipefail
     mise install
+    composer install
 
 # Build the image locally
 build:
@@ -67,7 +68,13 @@ lint:
     # and no others - see phpstan.neon. No baseline and no ignoreErrors: both
     # would silence our own code along with the two symbols the image supplies,
     # which stubs/baikal-image.php declares properly instead.
-    {{ENGINE}} run --rm -v "{{justfile_directory()}}:/app" -w /app {{PHPSTAN}} analyse --no-progress
+    #
+    # From vendor/, not the phpstan container it used to run in, and pinned by
+    # composer.lock rather than an image digest. The host's PHP is the same 8.5
+    # the image ships, so the analyser meets the language the entrypoint will
+    # actually run on - and phpstan.neon fixes the analysis target anyway.
+    # `just setup` is what puts this binary there.
+    vendor/bin/phpstan analyse --no-progress
 
 # Everything CI runs
 ci: lint test
