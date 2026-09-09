@@ -42,13 +42,21 @@ RUN set -eux; \
     sha256sum -c /tmp/baikal.zip.sha256; \
     unzip -q /tmp/baikal.zip -d /build; \
     test -f /build/baikal/Core/Distrib.php; \
-    test -d /build/baikal/vendor
+    test -d /build/baikal/vendor; \
+    mkdir -p /data
 
 FROM ${RUNTIME_IMAGE}
 
 COPY --from=frankenphp-build --chmod=0755 /go/src/app/dist/frankenphp /usr/local/bin/frankenphp
 COPY --from=fetch --chown=root:root /build/baikal /var/www/baikal
 COPY --chown=root:root caddy/Caddyfile /etc/caddy/Caddyfile
+# An empty, pre-owned mount point rather than a runtime chown: this image has
+# no shell and no CAP_CHOWN to fix ownership at start. A fresh named volume
+# mounted over an image path that already exists inherits that path's
+# ownership on its first mount (Docker's and Podman's shared "copy-up"
+# behaviour) - without this the volume is created root:root and the
+# entrypoint's own mkdir into it fails under --user 65532:65532.
+COPY --from=fetch --chown=65532:65532 /data /data
 
 # Trailing slashes are mandatory: the framework concatenates these directly
 # with "baikal.yaml" and "db/db.sqlite" (Flake/Framework.php:168-182).
