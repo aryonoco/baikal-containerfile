@@ -1,0 +1,39 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "Australia/Sydney",
+  "schedule": ["before 6am on monday"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "ARG BAIKAL_VERSION. The dockerfile manager only reads an ARG that a FROM expands, and this one feeds a release URL.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": ["ARG BAIKAL_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "sabre-io/Baikal",
+      "datasourceTemplate": "github-releases"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "jq tags releases as jq-1.8.2. mise strips that prefix from aqua's registry entry; Renovate does not read the aqua registry, so without this every candidate version is discarded as unparseable and no PR is ever raised.",
+      "matchDepNames": ["aqua:jqlang/jq"],
+      "extractVersion": "^jq-(?<version>.+)"
+    },
+    {
+      "matchDepNames": ["sabre-io/Baikal"],
+      "labels": ["baikal", "needs-checksum"],
+      "prBodyNotes": [
+        "`ARG BAIKAL_SHA256` still holds the previous archive's checksum and is not updated by this PR. The build's `sha256sum -c` fails until it is set by hand:",
+        "```\ncurl -sL https://github.com/sabre-io/Baikal/releases/download/{{{newValue}}}/baikal-{{{newValue}}}.zip | shasum -a 256\n```"
+      ]
+    },
+    {
+      "matchDepNames": ["dunglas/frankenphp"],
+      "labels": ["frankenphp"],
+      "prBodyNotes": [
+        "`baikal.openvex.json` argues three grpc advisories unreachable, scoped to `pkg:golang/google.golang.org/grpc@v1.81.1`. A builder that ships a different grpc makes those statements stop matching and `just scan` goes red. Re-argue reachability against the version this build ships and update the statements, or delete them — widening the version to clear the finding asserts something nobody checked.",
+        "The acceptance suite asserts the binary carries no file capability. Upstream's own FrankenPHP builds set `cap_net_bind_service=ep`, and a binary with a file capability cannot be exec'd at all under `--cap-drop ALL`."
+      ]
+    }
+  ]
+}
