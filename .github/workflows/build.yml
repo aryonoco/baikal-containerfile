@@ -43,10 +43,12 @@ on:
     - cron: '17 4 * * 1'
   workflow_dispatch:
 
-# Read-only for every job. Only publish widens this, and only by what pushing a
-# package and signing an attestation actually require.
-permissions:
-  contents: read
+# Nothing by default, granted per job. A workflow with no permissions block at
+# all inherits the account default, and read-only only became that default for
+# entities created after February 2023 - so "we did not set it" can quietly
+# mean a write-scoped token. Starting from {} makes every grant below a
+# deliberate one, and only publish needs more than reading the checkout.
+permissions: {}
 
 # One run per ref. Two pushes to main landing close together would otherwise
 # race to write :latest, and the loser is whichever finishes second rather than
@@ -61,6 +63,8 @@ jobs:
   lint:
     runs-on: ubuntu-26.04
     timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -125,6 +129,8 @@ jobs:
     # the failure mode worth catching is a build that has stopped making
     # progress rather than one that is merely slow.
     timeout-minutes: 120
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -261,6 +267,8 @@ jobs:
             runner: ubuntu-26.04-arm
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
         with:
@@ -343,7 +351,10 @@ jobs:
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
-          username: ${{ github.actor }}
+          # The owner, not github.actor: actor is whoever clicked the
+          # dispatch button or pushed last, so it varies run to run for no
+          # reason. GHCR authorises on the token, not the name.
+          username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # Each artifact lands in its own directory under this path, which is what
