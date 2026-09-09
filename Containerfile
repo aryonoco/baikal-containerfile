@@ -71,6 +71,25 @@ ENV BAIKAL_PATH_CONFIG=/data/config/ \
 
 COPY --chown=root:root --chmod=0755 rootfs/usr/local/bin/baikal-bootstrap /usr/local/bin/baikal-bootstrap
 
+# The identity that never changes, as labels. `source` is the one with a real
+# consumer: GHCR reads it to link the package to this repository, and that link
+# is what puts the README, the licence and the repository breadcrumb on the
+# package page. The rest cost nothing and answer the obvious questions.
+#
+# Labels are inherited by anything that does FROM this image, which is the
+# usual argument for preferring annotations - it does not bite here, because a
+# leaf application image is nobody's base. The three volatile keys (version,
+# revision, created) are deliberately absent: CI sets them as index
+# annotations when it merges the architectures, where one value covers both and
+# they cannot drift apart.
+LABEL org.opencontainers.image.source="https://github.com/aryonoco/baikal-containerfile" \
+      org.opencontainers.image.url="https://github.com/aryonoco/baikal-containerfile" \
+      org.opencontainers.image.documentation="https://github.com/aryonoco/baikal-containerfile#readme" \
+      org.opencontainers.image.title="Baikal" \
+      org.opencontainers.image.description="Hardened Baikal CalDAV/CardDAV server on FrankenPHP and distroless" \
+      org.opencontainers.image.licenses="BSD-2-Clause" \
+      org.opencontainers.image.vendor="Aryan Ameri"
+
 EXPOSE 8080
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-bootstrap"]
