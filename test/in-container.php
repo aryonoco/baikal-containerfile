@@ -23,7 +23,7 @@ const LOOPBACK_ORIGIN = 'http://127.0.0.1:8080';
 const FORBIDDEN_SHELLS = ['/bin/sh', '/bin/bash', '/bin/dash'];
 
 const NO_CAPABILITIES = '0000000000000000';
-const EGRESS_PROBE_HOST = '1.1.1.1';
+const EGRESS_PROBE_HOST = '9.9.9.9';
 const EGRESS_PROBE_PORT = 443;
 const EGRESS_PROBE_TIMEOUT = 3;
 const DIGEST_TABLE = 'users';
