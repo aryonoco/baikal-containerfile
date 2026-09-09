@@ -27,10 +27,11 @@
 
 "aqua:jqlang/jq" = "1.8.2"
 
+"aqua:suzuki-shunsuke/pinact" = "4.1.1"
+
 # Pinned but not yet invoked by any recipe: the workflow gates that use them
 # arrive with the CI pipeline. They are here so this file is the whole picture
 # of what the repository's tooling is, rather than the part of it wired up so
 # far.
 "aqua:aquasecurity/trivy" = "0.74.0"
-"aqua:suzuki-shunsuke/pinact" = "4.1.1"
 "aqua:zizmorcore/zizmor" = "1.30.0"

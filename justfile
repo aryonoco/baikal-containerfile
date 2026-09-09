@@ -54,8 +54,23 @@ acceptance:
 # Build the image, then run the acceptance suite against it
 test: build acceptance
 
+# Verify every action reference is a SHA and matches the tag its comment names
+actions-check:
+    # `gh` is the one tool here that mise does not provide, and it is only a
+    # local fallback for the API token: CI passes GITHUB_TOKEN itself, and
+    # nothing but pinact's GitHub API calls consumes it.
+    GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" pinact run --verify --check
+
+# Rewrite tag references to the SHA they resolve to today
+actions-pin:
+    GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" pinact run
+
+# Move every pin to the action's latest release
+actions-update:
+    GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" pinact run --update
+
 # Every static gate CI runs
-lint:
+lint: actions-check
     # By path, not piped over stdin. This used to run the official hadolint
     # image because mise had no native macOS build; the aqua backend has one,
     # so the container is gone and the file is named on the command line -
