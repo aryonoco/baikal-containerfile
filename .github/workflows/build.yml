@@ -1,25 +1,9 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-# The static gates and the acceptance suite run through justfile recipes, using
-# the binaries mise.toml pins - so a green `lint` here and a green `just lint`
-# on a developer's machine are statements about the same tools reading the same
-# .shellcheckrc and phpstan.neon. That is the half where a gate configured one
-# way locally and another way in CI would make one of the two a lie, and
-# nothing would say which.
-#
-# The build and publish paths are not that, and claiming otherwise would be the
-# same mistake pointing the other way. They call `docker buildx`, `skopeo` and
-# `jq` directly, because there is no local equivalent to call: `just build` is
-# one `docker build`, while this builds through a layer cache into an OCI
-# layout with two attestations, and nothing in the publish path exists locally
-# at all. jq is pinned in mise.toml alongside the linters. Buildx and skopeo
-# are not, and skopeo cannot be - it is not in mise's registry. Both are
-# whatever the runner image ships (ubuntu-26.04 currently carries buildx 0.36.1
-# and skopeo 1.21.0-dev), which makes the runner image an unpinned dependency
-# of this pipeline and not merely the place it runs. skopeo is the one to watch:
-# it is what carries the tested bytes to the registry unchanged, so "what ships
-# is what was tested" rests on a binary whose version we do not choose.
+# The lint job calls the justfile's recipes, so a gate is changed in one place.
+# The build and publish jobs have no local equivalent to call and invoke their
+# tools directly.
 #
 # The shape of the pipeline is: build each architecture once on a runner of
 # that architecture, hand the resulting image to every engine leg for that
@@ -40,27 +24,12 @@ on:
     # This exists to find out early that something outside this repository has
     # moved under it: the Baikal release URL or its checksum, the FrankenPHP
     # static builder's behaviour, the runner images, a linter that changed its
-    # mind. It cannot collect security fixes, and it must not be described as
-    # if it could: BUILDER_IMAGE and RUNTIME_IMAGE are pinned by immutable
-    # @sha256: digests and the Baikal archive by checksum, so a rebuild on an
-    # unchanged Containerfile re-pulls the same bytes and produces the same
-    # content.
+    # mind. It does not collect upstream security fixes and must not be relied
+    # on to; Renovate moves the pinned digests, as reviewable pull requests.
     #
-    # That is not the whole list, and the sentence above would read as though
-    # it were. The fetch stage is `FROM debian:13-slim`, a floating tag, and it
-    # does move. It changes nothing here: the only thing that stage contributes
-    # to the final image is an archive whose SHA-256 is verified before it is
-    # unpacked, so it is a checksum-gated unzip and a newer debian unzips the
-    # same bytes. Worth naming rather than leaving to be found.
-    #
-    # Renovate is the update path, and a digest bump arriving as a reviewable
-    # pull request is better than a blind weekly rebuild: it leaves a record of
-    # what moved and when.
-    #
-    # For any of that to be true the scheduled run has to reach past the layer
-    # cache, and it does - see the build job. A weekly build that restored the
-    # cache would hit on both the archive fetch and the PHP compile, and would
-    # prove nothing beyond the runner image still booting.
+    # For it to detect anything the run has to reach past the layer cache, and
+    # it does - see the build job. A weekly build that restored the cache would
+    # hit on both the archive fetch and the PHP compile.
     - cron: '17 4 * * 1'
   workflow_dispatch:
 
@@ -94,18 +63,13 @@ jobs:
           # use after this step and is not worth leaving in .git/config.
           persist-credentials: false
 
-      # Installs exactly what mise.toml pins - hadolint, ShellCheck, reuse and
-      # just - so the linters that reach a verdict here are the ones the
-      # developer ran, not whatever the runner image happens to carry on PATH.
+      # Installs the tools mise.toml lists, `just` among them.
       - uses: jdx/mise-action@v4
 
-      # PHP is the one part of the toolchain mise does not supply, and
-      # deliberately: its only PHP backend compiles PHP from source, which
-      # would be minutes of every run in order to analyse two files. setup-php
-      # installs a prebuilt 8.5 - the version the image's FrankenPHP build
-      # ships - in seconds, composer.lock is what pins PHPStan, and
-      # phpstan.neon fixes the analysis target regardless of which PHP runs the
-      # analyser.
+      # Not from mise: its only PHP backend compiles PHP from source, which
+      # would add minutes to every run in order to analyse two files. 8.5
+      # because that is what the image's FrankenPHP build ships; phpstan.neon
+      # fixes the analysis target either way.
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.5'
@@ -113,16 +77,11 @@ jobs:
           # is a large slowdown bought for nothing.
           coverage: none
 
-      # The repository's own definition of "install the pinned toolchain".
-      # mise-action has already done the mise half of it; this adds the
-      # Composer half, and keeps CI from growing a second spelling.
+      # `mise install` again, a no-op after the action, plus the
+      # `composer install` that puts PHPStan in vendor/.
       - run: just setup
 
-      # hadolint, ShellCheck, PHPStan and reuse, at exactly the settings
-      # .shellcheckrc and phpstan.neon fix. Nothing is relaxed for CI: there is
-      # no `shellcheck disable=`, no PHPStan baseline and no ignoreErrors
-      # anywhere in this tree, and adding one is not an accepted way to close a
-      # gate.
+      # hadolint, ShellCheck, PHPStan and reuse.
       - run: just lint
 
   build:
@@ -347,9 +306,8 @@ jobs:
     needs: [lint, test]
     # Pushes only from main, and only from a push or a hand-run dispatch. Not
     # from a pull request, which has no credential and no business moving a
-    # tag; and explicitly not from the schedule, because a weekly rebuild of
-    # digest-pinned inputs produces identical content and republishing it would
-    # be churn a digest-pinning consumer has to look at for nothing.
+    # tag; and explicitly not from the schedule, which exists to detect
+    # upstream breakage rather than to cut a release.
     if: >-
       github.ref == 'refs/heads/main'
       && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
@@ -367,16 +325,11 @@ jobs:
         with:
           persist-credentials: false
 
-      # For the pinned jq the merge step reads its metadata file with. No
-      # justfile recipe runs in this job; jq is the only tool on the publish
-      # path whose version this repository gets to choose.
+      # For jq, which the merge step reads its metadata file with.
       - uses: jdx/mise-action@v4
 
-      # For a current buildx, because it is `imagetools create` that merges the
-      # two architectures here. The action does also stand up a
-      # docker-container builder, which this job has no use for - nothing is
-      # built here, by design - but that is the price of taking the plugin from
-      # the documented place rather than trusting whatever the runner ships.
+      # For `imagetools create`, which merges the two architectures. The action
+      # also stands up a docker-container builder; this job does not use one.
       - uses: docker/setup-buildx-action@v4
 
       - uses: docker/login-action@v4

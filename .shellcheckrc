@@ -5,8 +5,7 @@
 # the only thing that proves the confinement contract, so a bug that hides in it
 # is a bug that ships: SC2312 in particular (a command substitution whose exit
 # status is discarded) is exactly how a failing command masquerades as a passing
-# check. Findings get fixed, never suppressed - there is no `disable=` anywhere
-# in this tree, and adding one is not an accepted way to close a gate.
+# check.
 enable=all
 severity=style
 

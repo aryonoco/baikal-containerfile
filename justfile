@@ -1,24 +1,16 @@
 # SPDX-License-Identifier: BSD-2-Clause
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
-# Every recipe runs through `mise exec`, so a gate uses the binary mise.toml
-# pins and never whatever the machine happens to carry on PATH. A developer who
-# has not run `mise activate` and a CI runner that has done nothing but install
-# mise therefore reach the same verdict, which is the whole point of pinning.
+# Every recipe runs through `mise exec`, so a recipe resolves the tools
+# mise.toml lists rather than whatever is on PATH. A recipe that needs
+# something not listed there will not find it.
 set shell := ["mise", "exec", "--", "bash", "-euo", "pipefail", "-c"]
 
 ENGINE := env_var_or_default("ENGINE", "docker")
 IMAGE := "localhost/baikal:dev"
 
-# Every gate below is pinned to an exact version, and CI runs these same
-# invocations rather than its own. Two reasons, both of which have bitten this
-# kind of setup before: an unpinned linter turns a green branch red on a day
-# nobody changed anything, which trains everyone to re-run the job instead of
-# reading it; and a gate configured differently in the two places makes
-# `just ci` a statement about a pipeline that does not exist. Bumping a pin is
-# then a commit, reviewed like any other, with the new findings in the diff.
-# The pins themselves live in mise.toml, bar PHPStan's, which composer.lock
-# holds because mise's only PHP backend builds PHP from source.
+# Tool versions live in mise.toml, bar PHPStan's, which composer.lock holds
+# because mise's only PHP backend builds PHP from source.
 
 default:
     @just --list
@@ -74,8 +66,7 @@ lint:
     # `just lint` fail for every task up to Task 5.
     #
     # enable=all and severity=style live in .shellcheckrc rather than on this
-    # line, so an editor's ShellCheck and CI's reach the same verdict. Nothing
-    # in this tree carries a `shellcheck disable=` directive and nothing may.
+    # line, so an editor's ShellCheck and this one read the same settings.
     git ls-files '*.sh' | xargs -r shellcheck
     reuse lint
     # level max plus bleedingEdge, over the two PHP files this repository owns
@@ -83,12 +74,9 @@ lint:
     # would silence our own code along with the two symbols the image supplies,
     # which stubs/baikal-image.php declares properly instead.
     #
-    # From vendor/, not the phpstan container it used to run in, and pinned by
-    # composer.lock rather than an image digest. The host's PHP is the same 8.5
-    # the image ships, so the analyser meets the language the entrypoint will
-    # actually run on - and phpstan.neon fixes the analysis target anyway.
-    # `just setup` is what puts this binary there.
+    # From vendor/, where `just setup` puts it; composer.lock is the version.
+    # phpstan.neon fixes the analysis target, whichever PHP runs the analyser.
     vendor/bin/phpstan analyse --no-progress
 
-# Everything CI runs
+# Every gate, locally
 ci: lint test

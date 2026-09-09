@@ -5,9 +5,7 @@ includes:
     # Every check that is on its way to becoming the default in the next major.
     # Turning them on now means an upgrade is a version bump rather than a
     # backlog. The path is relative to this file, so it resolves inside the
-    # Composer install that composer.lock pins - which is also what makes the
-    # include safe to write at all: it names a file whose contents are fixed by
-    # the same lock as the analyser reading it.
+    # Composer install rather than against the working directory.
     - vendor/phpstan/phpstan/conf/bleedingEdge.neon
 
 parameters:

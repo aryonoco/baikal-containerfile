@@ -60,13 +60,8 @@ breaking change.
   patching itself - `cc-debian13` still ships libc6, libssl3t64, libstdc++6,
   libgcc-s1, libgomp1, libzstd1 and zlib1g, all executable code that takes CVEs.
   That obligation moves to the base image's own rebuilds — and **nothing in
-  this repository collects them on its own.** `BUILDER_IMAGE` and
-  `RUNTIME_IMAGE` are pinned by immutable `@sha256:` and the Baikal archive by
-  checksum, so a rebuild on an unchanged Containerfile re-pulls identical bytes
-  and produces identical content. The fetch stage's `debian:13-slim` is the one
-  floating tag and does move; it changes nothing, because all that stage gives
-  the final image is an archive verified against a pinned SHA-256 before it is
-  unpacked. **Renovate is the update path**: a digest
+  this repository collects them on its own.** Rebuilding an unchanged
+  Containerfile does not pick them up. **Renovate is the update path**: a digest
   bump arrives as a reviewable pull request that leaves a record of what moved
   and when, which a blind rebuild does not. CI's weekly run exists to catch
   upstream breakage early — a release URL that moved, a builder that changed
@@ -88,25 +83,21 @@ breaking change.
 - `just setup` — install the pinned toolchain. One command on a fresh clone
 - `just build` — build the image locally
 - `just test` — build, then run the acceptance suite against it
-- `just lint` — hadolint, ShellCheck, PHPStan and `reuse lint`, each pinned to an exact version and invoked exactly as CI invokes it
-- `just ci` — everything CI runs. Run this before committing
+- `just lint` — hadolint, ShellCheck, PHPStan and `reuse lint`
+- `just ci` — every gate, locally. Run this before committing
 
 ## Where the toolchain comes from
 
-- **`mise.toml` is the single source of truth for tool versions.** hadolint,
-  ShellCheck, reuse, just, and the trivy/pinact/zizmor the CI workflow will use
-  are all pinned there, and CI installs from that file rather than keeping a
-  list of its own. Every justfile recipe runs through `mise exec`, so a gate
-  uses the pinned binary even on a machine that has the same tool on PATH —
-  without that the pin would be decoration
-- **PHP is the deliberate exception, and it is a real one.** `php` and
+- **`mise.toml` is where tool versions are written.** hadolint, ShellCheck,
+  reuse, just, jq and the trivy/pinact/zizmor the CI workflow will use are all
+  listed there. Every justfile recipe runs through `mise exec`, so a recipe
+  resolves those binaries and not a same-named one on PATH
+- **PHP is a deliberate exception.** `php` and
   `composer` come from the host, not from mise: mise's only PHP backend
   compiles PHP from source, which is minutes added to every CI run in order to
   analyse two files. PHPStan is therefore pinned by `composer.lock`, and
   `phpstan.neon` sets `phpVersion` so the *analysis target* is fixed no matter
-  which PHP runs the analyser. The local PHP is the same 8.5 the image's
-  FrankenPHP build ships, which is why running the analyser on the host is not
-  a compromise — it meets the language the entrypoint actually runs on
+  which PHP runs the analyser
 - **So this repository now carries `composer.json`, `composer.lock` and a
   `vendor/`, and that deserves an explanation**, because the image's whole
   claim is that no PHP toolchain reaches it. None of it does. The Containerfile
