@@ -13,7 +13,7 @@ IMAGE := "localhost/baikal:dev"
 # reading it; and a gate configured differently in the two places makes
 # `just ci` a statement about a pipeline that does not exist. Bumping a pin is
 # then a commit, reviewed like any other, with the new findings in the diff.
-HADOLINT := "ghcr.io/hadolint/hadolint@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d"
+HADOLINT := "ghcr.io/hadolint/hadolint:2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d"
 PHPSTAN := "ghcr.io/phpstan/phpstan:2.2.13@sha256:fda102448a1f9a771bc082edf5e0d04d96491f72d5d25edf7499ae94c14b08a7"
 SHELLCHECK := "shellcheck-py==0.11.0.1"
 REUSE := "reuse==6.2.0"
