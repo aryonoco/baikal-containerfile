@@ -57,50 +57,6 @@ podman run -d --name baikal \
 Settings are written once. Changing a variable after first run has no effect.
 Settings changed through the admin UI persists.
 
-## Verifying what you pulled
-
-GHCR has **no immutable tags and no retention policy** — both are open feature
-requests, not oversights on this end. A tag here is a moving pointer, and
-nothing at the registry stops it from being repointed. `:0.12.1` records the
-version that was published under it; it is not a promise that the bytes behind
-it never change. Two things are in your hands instead, and they are the only
-integrity controls that actually exist.
-
-**Pin the digest.** Resolve it once, review it like any other dependency, and
-let Renovate bump it:
-
-```bash
-podman pull ghcr.io/aryonoco/baikal@sha256:...
-```
-
-**Verify where it came from.** Every published index carries a build provenance
-attestation signed by GitHub's Sigstore identity:
-
-```bash
-gh attestation verify oci://ghcr.io/aryonoco/baikal:0.12.1 \
-  --repo aryonoco/baikal-containerfile
-```
-
-That proves the image came out of this repository's workflow without trusting
-the registry, and it fails if a tag has been repointed at anything built
-elsewhere.
-
-The index also carries BuildKit's own SLSA provenance and an SPDX SBOM, which
-describe the build itself rather than who ran it:
-
-```bash
-docker buildx imagetools inspect ghcr.io/aryonoco/baikal:0.12.1 \
-  --format '{{ json .SBOM }}'
-```
-
-The SBOM is honest but thin, and worth saying so: it sees the distroless Debian
-layer and the Go module graph of the FrankenPHP binary, and it cannot see the
-twenty PHP extensions compiled into that binary, because nothing in the image
-records them.
-
-Each architecture is also published on its own — `:0.12.1-amd64` and
-`:0.12.1-arm64`. `:0.12.1` and `:latest` are the multi-arch index over the two.
-
 ## Reverse proxy notes
 
 **Do not strip a path prefix** (sabre replies 403 "out of base uri"), and serve
