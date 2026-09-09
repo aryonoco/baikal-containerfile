@@ -35,6 +35,11 @@ on:
     # content. Renovate is the update path, and a digest bump arriving as a
     # reviewable pull request is better than a blind weekly rebuild: it leaves
     # a record of what moved and when.
+    #
+    # For any of that to be true the scheduled run has to reach past the layer
+    # cache, and it does - see the build job. A weekly build that restored the
+    # cache would hit on both the archive fetch and the PHP compile, and would
+    # prove nothing beyond the runner image still booting.
     - cron: '17 4 * * 1'
   workflow_dispatch:
 
@@ -154,12 +159,30 @@ jobs:
       # caches are per-platform, so sharing one key between the two runners
       # would mean each restoring gigabytes it cannot use and then overwriting
       # the other's.
+      #
+      # The run id is on the end because actions/cache only saves on a miss of
+      # the exact key. Without it the first build for a given Containerfile
+      # writes the cache and every later run hits it exactly, saves nothing,
+      # and the cache is frozen at whatever that first build produced - so
+      # everything the image copies but the key does not cover (the Caddyfile,
+      # the bootstrap, upstream-migrations.sh) is rebuilt for ever. A rolling
+      # key always misses, so it always saves; the prefix restore-keys are what
+      # make the miss cheap. The cost is one entry per run against the
+      # repository's cache quota, and eviction of the oldest, which is the
+      # right trade and not an accident.
+      #
+      # Skipped entirely on the schedule: that run exists to rebuild the
+      # expensive stages from scratch, so restoring a cache would defeat it and
+      # saving one would write back an entry that had not built them.
       - name: Cache the build layers
+        if: github.event_name != 'schedule'
         uses: actions/cache@v6
         with:
           path: /tmp/.buildx-cache
-          key: buildx-${{ matrix.arch }}-${{ hashFiles('Containerfile') }}
-          restore-keys: buildx-${{ matrix.arch }}-
+          key: buildx-${{ matrix.arch }}-${{ hashFiles('Containerfile') }}-${{ github.run_id }}
+          restore-keys: |
+            buildx-${{ matrix.arch }}-${{ hashFiles('Containerfile') }}-
+            buildx-${{ matrix.arch }}-
 
       # Exported to a file rather than pushed, because this runs on every pull
       # request including forks, where there is no registry credential and must
@@ -179,18 +202,31 @@ jobs:
       - name: Build the image
         run: |
           image=$(just --evaluate IMAGE)
-          docker buildx build \
-            --cache-from type=local,src=/tmp/.buildx-cache \
-            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
-            --attest type=provenance,mode=max \
-            --attest type=sbom \
-            --output type=oci,dest=/tmp/image.tar,rewrite-timestamp=true \
-            -f Containerfile -t "${image}" .
-          # buildx's local cache exporter appends rather than replaces, so
-          # without this swap the directory grows every run until it is too
-          # large to restore.
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          args=(
+            --attest type=provenance,mode=max
+            --attest type=sbom
+            --output type=oci,dest=/tmp/image.tar,rewrite-timestamp=true
+            -f Containerfile -t "${image}"
+          )
+          if [ "${GITHUB_EVENT_NAME}" = schedule ]; then
+            # The canary run, and the only run that has to ignore the cache.
+            # These two stages are the only ones that reach outside this
+            # repository - one downloads the Baikal archive and checks it
+            # against a pinned SHA-256, the other compiles PHP and FrankenPHP
+            # in the pinned builder - and a cache hit on either means the
+            # weekly build tested nothing upstream at all.
+            args+=(--no-cache-filter frankenphp-build --no-cache-filter fetch)
+          else
+            # reset=true replaces the export instead of appending to it, which
+            # is what stops the directory growing every run until it is too
+            # large to restore. It needs Buildx 0.35 or later; the runner has
+            # 0.36.
+            args+=(
+              --cache-from type=local,src=/tmp/.buildx-cache
+              --cache-to type=local,dest=/tmp/.buildx-cache,mode=max,reset=true
+            )
+          fi
+          docker buildx build "${args[@]}" .
 
       - name: Publish the image as an artifact
         uses: actions/upload-artifact@v7
