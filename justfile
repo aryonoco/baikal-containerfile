@@ -14,6 +14,8 @@ IMAGE := "localhost/baikal:dev"
 # locally `just archive` writes one from the image the suite has just run
 # against.
 ARCHIVE := env_var_or_default("ARCHIVE", "/tmp/baikal-image.tar")
+LAYOUT := ARCHIVE + ".layout"
+REPORT := ARCHIVE + ".report.json"
 
 # Tool versions live in mise.toml, bar PHPStan's, which composer.lock holds
 # because mise's only PHP backend builds PHP from source.
@@ -69,11 +71,25 @@ archive:
 
 # Fail on any HIGH or CRITICAL vulnerability in {{ARCHIVE}}
 scan:
+    # Unpacked first. Handed a tar, trivy looks for a docker-archive
+    # manifest.json and nothing else; the OCI layout CI exports has no such
+    # file and the scan dies with "file manifest.json not found in tar". Both
+    # shapes unpack to a layout directory trivy reads, so this is also what
+    # keeps local and CI on one path through the scanner.
+    rm -rf {{LAYOUT}} && mkdir {{LAYOUT}} && tar xf {{ARCHIVE}} -C {{LAYOUT}}
     # Each statement in the VEX document names one advisory and one grpc
     # version, so a FrankenPHP bump that moves grpc stops them matching and the
     # findings come back rather than staying hidden behind the old argument.
-    trivy image --input {{ARCHIVE}} --vex baikal.openvex.json \
-      --severity HIGH,CRITICAL --exit-code 1
+    trivy image --input {{LAYOUT}} --vex baikal.openvex.json \
+      --severity HIGH,CRITICAL --format json --output {{REPORT}}
+    # The layout also carries an attestation manifest, on unknown/unknown. If
+    # trivy ever resolves the index to that instead of to the image it analyses
+    # nothing, and a report with no packages in it is indistinguishable from a
+    # clean one: `--exit-code 1` is about findings, and an empty scan has none.
+    # So assert the scanner saw something before believing what it says.
+    jq -e '(([.Results[]? | .Packages // [] | length] | add) // 0) > 0' {{REPORT}} > /dev/null \
+      || { echo 'no packages in {{ARCHIVE}}: the scan found nothing to scan, not nothing wrong' >&2; exit 1; }
+    trivy convert --scanners vuln --format table --exit-code 1 {{REPORT}}
 
 # Verify every action reference is a SHA and matches the tag its comment names
 actions-check:
