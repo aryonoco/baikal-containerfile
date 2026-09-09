@@ -1,0 +1,234 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
+
+# This file runs the repository's own gates rather than a second set spelled
+# out here. Every command it invokes is a justfile recipe, every version those
+# recipes resolve comes from mise.toml, and both are installed from those files
+# - so a green run here and a green `just ci` on a developer's machine are
+# statements about the same binaries reading the same configuration. A gate
+# configured one way locally and another way in CI makes one of the two a lie,
+# and nothing tells you which.
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly. The final image is distroless but it is not empty: cc-debian13
+    # ships libc6, libssl3t64, libstdc++6 and the rest, and the static PHP
+    # build carries its own OpenSSL - all executable code that takes CVEs.
+    # Nothing can apt-get those fixes in, which is the point of the base, so
+    # collecting them means re-resolving the digests and rebuilding. The
+    # version tag does not move; the digest under it does, which a consumer
+    # pinning digests sees as an ordinary bump.
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+
+# Read-only for every job. Only publish widens this, and only by what pushing a
+# package and signing an attestation actually require.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # Nothing in this job pushes, and `git ls-files` and `reuse lint`
+          # read the index rather than the remote, so the checkout token has no
+          # use after this step and is not worth leaving in .git/config.
+          persist-credentials: false
+
+      # Installs exactly what mise.toml pins - hadolint, ShellCheck, reuse and
+      # just - so the linters that reach a verdict here are the ones the
+      # developer ran, not whatever the runner image happens to carry on PATH.
+      - uses: jdx/mise-action@v4
+
+      # PHP is the one part of the toolchain mise does not supply, and
+      # deliberately: its only PHP backend compiles PHP from source, which
+      # would be minutes of every run in order to analyse two files. setup-php
+      # installs a prebuilt 8.5 - the version the image's FrankenPHP build
+      # ships - in seconds, composer.lock is what pins PHPStan, and
+      # phpstan.neon fixes the analysis target regardless of which PHP runs the
+      # analyser.
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          # Nothing here measures coverage, and Xdebug loaded into the analyser
+          # is a large slowdown bought for nothing.
+          coverage: none
+
+      # The repository's own definition of "install the pinned toolchain".
+      # mise-action has already done the mise half of it; this adds the
+      # Composer half, and keeps CI from growing a second spelling.
+      - run: just setup
+
+      # hadolint, ShellCheck, PHPStan and reuse, at exactly the settings
+      # .shellcheckrc and phpstan.neon fix. Nothing is relaxed for CI: there is
+      # no `shellcheck disable=`, no PHPStan baseline and no ignoreErrors
+      # anywhere in this tree, and adding one is not an accepted way to close a
+      # gate.
+      - run: just lint
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      # Both engines, because the consumer runs rootless Podman while local
+      # development runs Docker. Podman rejects things Docker accepts, so an
+      # image tested under only one can ship a confinement contract that
+      # quietly does not hold on the other. GitHub's ubuntu runners carry both,
+      # so this costs a second job and nothing else.
+      #
+      # fail-fast off: when the two diverge, which one broke is the finding,
+      # and cancelling the other leg throws that away.
+      fail-fast: false
+      matrix:
+        engine: [docker, podman]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # For `just`, which is what invokes the suite.
+      - uses: jdx/mise-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      # Keyed on the Containerfile alone. Everything that makes the PHP build
+      # expensive is declared there - the extension list, the builder image
+      # digest, the Baikal version - so a real bump busts the cache and pays
+      # for itself, while editing a test or this file does not. Local timings
+      # understate this badly: the build is ~4 minutes on a machine with
+      # eighteen cores to give it, and a free runner has a small fraction of
+      # that.
+      #
+      # The key deliberately omits the engine. Both legs build the identical
+      # image with the identical builder, and two copies of a multi-gigabyte
+      # layer cache would evict each other out of the repository's cache
+      # budget. Whichever leg finishes second finds the key already written and
+      # says so; that is the intended outcome, not a fault.
+      - name: Cache the build layers
+        uses: actions/cache@v6
+        with:
+          path: /tmp/.buildx-cache
+          key: buildx-${{ hashFiles('Containerfile') }}
+          restore-keys: buildx-
+
+      # buildx under both legs, with only the handover to the engine under test
+      # differing. Building each leg with its own engine would mean the two are
+      # not testing the same bytes, which is the one thing this matrix exists
+      # to compare. The tag comes from the justfile so that the suite and the
+      # build cannot disagree about which image is under test.
+      - name: Build the image
+        run: |
+          image=$(just --evaluate IMAGE)
+          docker buildx build --load \
+            --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            -f Containerfile -t "${image}" .
+          # buildx's local cache exporter appends rather than replaces, so
+          # without this swap the directory grows every run until it is too
+          # large to restore.
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      # The version is logged because this leg has never run anywhere before
+      # and the first thing worth knowing about a failure is which podman saw
+      # it.
+      - name: Hand the image to podman
+        if: matrix.engine == 'podman'
+        run: |
+          # pipefail, because the runner's default shell does not set it and
+          # `docker save` failing into a pipe would otherwise be reported only
+          # as `podman load` choking on an empty stream.
+          set -o pipefail
+          podman --version
+          docker save "$(just --evaluate IMAGE)" | podman load
+
+      # The acceptance suite is the gate. It runs the image under the exact
+      # confinement the README promises - no capabilities, read-only root, uid
+      # 65532, one tmpfs, one volume - so what CI proves is what ships.
+      #
+      # ENGINE arrives as an environment variable rather than interpolated into
+      # the command, so the recipe that runs is a constant string.
+      - name: Acceptance suite
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: just acceptance
+
+  publish:
+    needs: [lint, test]
+    # Never from a pull request, and never from a branch that is not main. The
+    # push trigger already restricts pushes to main; the ref test is what stops
+    # a workflow_dispatch on a topic branch from moving :latest. The weekly
+    # schedule runs on main and is meant to reach here - that rebuild is the
+    # only thing that moves the digest under an unchanged version tag.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Push the image, and with push-to-registry below its attestation too.
+      packages: write
+      # Sigstore signs the provenance against the runner's OIDC identity.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # arm64 is built under emulation, and it is the slow leg by a wide
+      # margin: a static PHP build through qemu-aarch64. That cost is why
+      # publishing is off the pull-request path entirely.
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # The Containerfile is the single place the version is written, so the
+      # tag is read back out of it rather than kept in step with it by hand.
+      # Empty is a hard failure: publishing `ghcr.io/aryonoco/baikal:` and
+      # `:latest` from a silently unmatched grep would leave the only moving
+      # tag pointing at an image nobody can name.
+      - name: Read the Baikal version from the Containerfile
+        id: version
+        run: |
+          v=$(grep -oP '^ARG BAIKAL_VERSION=\K.*' Containerfile)
+          if [ -z "${v}" ]; then
+            echo 'no ARG BAIKAL_VERSION line in Containerfile' >&2
+            exit 1
+          fi
+          echo "baikal=${v}" >> "${GITHUB_OUTPUT}"
+
+      # Deliberately uncached, unlike the test build. Every push to main and
+      # every weekly run pays the whole multi-arch build, which for the weekly
+      # run is the entire point: the base and builder digests are re-resolved
+      # and the result is a genuinely fresh image rather than replayed layers.
+      - uses: docker/build-push-action@v7
+        id: push
+        with:
+          context: .
+          file: Containerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          sbom: true
+          provenance: mode=max
+          tags: |
+            ghcr.io/aryonoco/baikal:${{ steps.version.outputs.baikal }}
+            ghcr.io/aryonoco/baikal:latest
+
+      # BuildKit's own provenance above describes the build to whoever already
+      # trusts the registry. This one is signed by GitHub's Sigstore identity
+      # and verifies with `gh attestation verify --repo` against this
+      # repository, which is a different and stronger claim.
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/aryonoco/baikal
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

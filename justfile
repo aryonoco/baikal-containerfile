@@ -44,9 +44,19 @@ build:
     # explicitly is the one form that works on both engines.
     {{ENGINE}} build -f Containerfile -t {{IMAGE}} .
 
-# Run the acceptance suite against a locally built image
-test: build
+# Run the acceptance suite against an image that already exists
+acceptance:
+    # Split out of `test` for CI, which builds the image once with buildx and a
+    # layer cache rather than with the engine's own build, then runs this
+    # against that one image under each engine in turn. Without the split CI
+    # would either rebuild inside the podman leg - testing different bytes from
+    # the docker leg, which is the one thing that matrix exists to rule out -
+    # or spell the suite's invocation out again in YAML, where it would drift
+    # from this file silently.
     ENGINE={{ENGINE}} IMAGE={{IMAGE}} ./test/acceptance.sh
+
+# Build the image, then run the acceptance suite against it
+test: build acceptance
 
 # Every static gate CI runs
 lint:
