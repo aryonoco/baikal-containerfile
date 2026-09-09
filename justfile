@@ -97,6 +97,10 @@ lint: actions-check
     # so the container is gone and the file is named on the command line -
     # which also means a finding reports `Containerfile:12` rather than `-:12`.
     hadolint Containerfile
+    # BuildKit's own linter, over the same file the build parses. `docker`
+    # rather than {{ENGINE}} because --check is a buildx flag and podman has no
+    # equivalent; it resolves the base images' metadata, so it needs a network.
+    docker build --check -f Containerfile .
     # Piped with -r so an empty match is a pass. A bare `shellcheck test/*.sh`
     # exits 123 ("No files specified") before test/ exists, which would make
     # `just lint` fail for every task up to Task 5.

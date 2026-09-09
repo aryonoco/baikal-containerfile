@@ -83,7 +83,8 @@ breaking change.
 - `just setup` — install the pinned toolchain. One command on a fresh clone
 - `just build` — build the image locally
 - `just test` — build, then run the acceptance suite against it
-- `just lint` — pinact, hadolint, ShellCheck, `reuse lint` and PHPStan
+- `just lint` — pinact, hadolint, `docker build --check`, ShellCheck,
+  `reuse lint` and PHPStan
 - `just scan` — Trivy over the image archive `just archive` writes
 - `just actions-pin`, `just actions-update` — move the workflow's action pins
 - `just ci` — every gate, locally. Run this before committing

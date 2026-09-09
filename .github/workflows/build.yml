@@ -81,9 +81,9 @@ jobs:
       # `composer install` that puts PHPStan in vendor/.
       - run: just setup
 
-      # hadolint, ShellCheck, PHPStan, reuse and pinact. pinact reads the
-      # GitHub API to check each pinned SHA against the tag its comment names,
-      # and the job's own token is enough for that.
+      # hadolint, BuildKit's linter, ShellCheck, PHPStan, reuse and pinact.
+      # pinact reads the GitHub API to check each pinned SHA against the tag
+      # its comment names, and the job's own token is enough for that.
       - run: just lint
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
