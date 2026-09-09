@@ -16,8 +16,14 @@ set -euo pipefail
 SRC="${1:?path to VersionUpgrade.php}"
 EXPECTED="0.10.0 0.2.3 0.3.0 0.4.0 0.4.5 0.5.1 0.9.4"
 
+# || true: with set -e, a non-zero grep (SRC missing, empty, or no matching
+# lines - an upstream refactor moving the file is the likely real-world case)
+# would propagate through pipefail and kill the script inside this command
+# substitution, before the diagnostic below ever runs. An empty FOUND still
+# fails the comparison and prints the guidance; only exit-on-grep-failure was
+# the bug.
 FOUND=$(grep -oE "version_compare\(\\\$sVersionFrom, '[0-9.]+'" "$SRC" \
-        | grep -oE "'[0-9.]+'" | tr -d "'" | sort -u | tr '\n' ' ')
+        | grep -oE "'[0-9.]+'" | tr -d "'" | sort -u | tr '\n' ' ') || true
 FOUND="${FOUND% }"
 
 if [[ "$FOUND" != "$EXPECTED" ]]; then
