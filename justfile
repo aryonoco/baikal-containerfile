@@ -11,7 +11,10 @@ default:
 
 # Build the image locally
 build:
-    {{ENGINE}} build -t {{IMAGE}} .
+    # -f is required: Docker only auto-discovers `Dockerfile`, never
+    # `Containerfile`. Podman finds either, and accepts -f too, so naming it
+    # explicitly is the one form that works on both engines.
+    {{ENGINE}} build -f Containerfile -t {{IMAGE}} .
 
 # Run the acceptance suite against a locally built image
 test: build
