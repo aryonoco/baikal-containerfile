@@ -11,12 +11,18 @@ ARG BAIKAL_SHA256
 # The release archive is self-contained and ships vendor/, so no Composer runs
 # here and no build toolchain reaches the final image.
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+# Unpinned deliberately: this stage is discarded and none of these packages
+# reach the final image, so nothing here ships. Pinning would instead
+# guarantee a hard failure the first time Debian supersedes one of these
+# builds, which is exactly the moment the weekly rebuild most needs to keep
+# working.
+# hadolint ignore=DL3008
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-      unzip=6.0-29+deb13u1 \
-      ca-certificates=20250419 \
-      curl=8.14.1-2+deb13u4; \
+      unzip \
+      ca-certificates \
+      curl; \
     rm -rf /var/lib/apt/lists/*; \
     curl -fsSL -o /tmp/baikal.zip \
       "https://github.com/sabre-io/Baikal/releases/download/${BAIKAL_VERSION}/baikal-${BAIKAL_VERSION}.zip"; \
@@ -30,10 +36,14 @@ ARG BAIKAL_VERSION
 
 # libsqlite3-dev is required to build pdo_sqlite; it is purged again once
 # the extension is linked, and pdo_sqlite still loads afterwards because the
-# runtime library (libsqlite3-0) is not removed with it.
+# runtime library (libsqlite3-0) is not removed with it. Left unpinned for
+# the same reason as the fetch stage: it is purged before this layer is
+# done, so it never ships, and a pin would fail outright once Debian
+# supersedes the build, defeating the weekly rebuild it's meant to serve.
+# hadolint ignore=DL3008
 RUN set -eux; \
     apt-get update; \
-    apt-get install -y --no-install-recommends libsqlite3-dev=3.46.1-7+deb13u1; \
+    apt-get install -y --no-install-recommends libsqlite3-dev; \
     docker-php-ext-install pdo_sqlite; \
     apt-get purge -y --auto-remove libsqlite3-dev; \
     rm -rf /var/lib/apt/lists/*; \

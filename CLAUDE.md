@@ -91,7 +91,13 @@ breaking change.
 
 ## Code quality
 
-- All linter gates are enforced as errors — fix them, don't suppress them
+- All linter gates are enforced as errors — fix them, don't suppress them. The one
+  documented exception is hadolint's DL3008 (pin apt package versions) on
+  `apt-get install` lines for packages that never reach the final image: Debian's
+  archive drops superseded builds once a security update lands, so a pin here has
+  no update path and would eventually 404 the weekly rebuild it exists to keep
+  green. Any other suppression, anywhere, needs the same kind of explicit,
+  comment-level justification beside it to be accepted
 - REUSE-compliant SPDX headers on every file; licence is **BSD-2-Clause**
 - The acceptance suite runs the image under the *exact* confinement the contract
   claims, so a check can never pass under looser settings than we ship. What CI
