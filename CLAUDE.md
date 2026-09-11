@@ -44,7 +44,15 @@ breaking change.
 | Volume required | exactly one: `/data` |
 | Outbound network | **none** |
 | Healthy | the shipped probe: `/healthz` **200** and `GET /dav.php` **exactly 401** |
+| Engine healthcheck | Docker runs it automatically. **Podman does not** — pass `--health-cmd` yourself |
 
+- **Podman never sees this image's `HEALTHCHECK`.** Its `libimage` reads a
+  healthcheck only from a Docker-media-type manifest; this image publishes as
+  an OCI index, so Podman's OCI inspection branch never reaches the config's
+  healthcheck field — no version of Podman does. Give Podman users
+  `--health-cmd '["CMD","/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]'`
+  (a Quadlet's `HealthCmd=` takes the same value). Tracked upstream as
+  podman/podman#25454 and #18904.
 - **Never assert `2xx` or use `curl --fail` against `/dav.php`.** Unwritable
   config, a missing database and an unwritable database directory *all* return
   **200** with an exception page. Only an exact `401` proves PHP ran, config

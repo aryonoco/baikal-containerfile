@@ -23,6 +23,19 @@ INTERNAL_NET=baikal-acceptance-internal-net
 
 CONFINE=(--cap-drop ALL --read-only --user 65532:65532 --tmpfs /tmp)
 
+# Podman's libimage switches on the manifest media type, not the config
+# contents: the OCI-manifest branch in libimage/inspect.go (func (i *Image)
+# Inspect) reads annotations and comment only and never looks at the
+# healthcheck, while the Docker-schema2 branch does. This image is published
+# as an OCI index, so podman never sees the HEALTHCHECK the Containerfile
+# declares, and a real Podman user has to pass it on the command line — this
+# is that one line. Tracked upstream as podman/podman#25454 and #18904;
+# delete this branch once one of them closes.
+ENGINE_ARGS=()
+if [[ "${ENGINE}" == podman ]]; then
+    ENGINE_ARGS=(--health-cmd '["CMD","/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]')
+fi
+
 PHP_BIN=/usr/local/bin/frankenphp
 PROBE_SRC=./in-container.php
 
@@ -108,7 +121,7 @@ cleanup
 "${ENGINE}" network create "${NET}" >/dev/null
 
 start() {
-    "${ENGINE}" run -d --name baikal-acc "${CONFINE[@]}" \
+    "${ENGINE}" run -d --name baikal-acc "${CONFINE[@]}" "${ENGINE_ARGS[@]}" \
         --network "${NET}" -p "${PORT}:8080" -p "${HEALTH_PORT}:8081" \
         -v "${VOL}":/data \
         -e BAIKAL_ADMIN_PASSWORD="${PASSWORD}" \
@@ -181,7 +194,7 @@ assert_status 301 '/.well-known/carddav' "${BASE}/.well-known/carddav"
 
 echo '== 10. no egress required, measured from a genuinely --internal network'
 "${ENGINE}" network create --internal "${INTERNAL_NET}" >/dev/null
-"${ENGINE}" run -d --name baikal-acc-internal "${CONFINE[@]}" \
+"${ENGINE}" run -d --name baikal-acc-internal "${CONFINE[@]}" "${ENGINE_ARGS[@]}" \
     --network "${INTERNAL_NET}" -p "${INTERNAL_PORT}:8080" \
     -v "${INTERNAL_VOL}":/data \
     -e BAIKAL_ADMIN_PASSWORD="${PASSWORD}" \

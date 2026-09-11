@@ -45,9 +45,27 @@ podman run -d --name baikal \
 Every Baikal failure mode — unwritable config, missing database, unwritable
 database directory — returns **200** with an exception page, so `curl --fail`
 reports a dead server as healthy. The image therefore ships its own probe and
-declares a `HEALTHCHECK`. Docker and Podman run it with no configuration.
-Kubernetes ignores an image `HEALTHCHECK` entirely and wants the probe declared
-in the pod spec instead.
+declares a `HEALTHCHECK`. Docker runs it with no configuration.
+
+Podman does not. Podman's `libimage` reads a healthcheck only out of a
+Docker-media-type manifest, and this image is published as an OCI index, so
+Podman's inspection path never looks at the config's healthcheck field —
+[podman/podman#25454](https://github.com/containers/podman/issues/25454) and
+[#18904](https://github.com/containers/podman/issues/18904) track it. The
+healthcheck is in the image config; a Podman user has to pass it explicitly:
+
+```bash
+podman run -d --health-cmd '["CMD","/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]' ghcr.io/aryonoco/baikal:0.12.1
+```
+
+Under a Quadlet, the equivalent is:
+
+```
+HealthCmd=["CMD","/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]
+```
+
+Kubernetes ignores an image `HEALTHCHECK` entirely, on either engine, and
+wants the probe declared in the pod spec instead.
 
 | | |
 |---|---|
