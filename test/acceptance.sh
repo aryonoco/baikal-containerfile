@@ -31,9 +31,15 @@ CONFINE=(--cap-drop ALL --read-only --user 65532:65532 --tmpfs /tmp)
 # declares, and a real Podman user has to pass it on the command line — this
 # is that one line. Tracked upstream as podman/podman#25454 and #18904;
 # delete this branch once one of them closes.
+#
+# No leading "CMD" here on purpose: before 5.8.0, Podman's --health-cmd
+# parser discards the parsed array whenever its first element is the literal
+# "CMD" and re-splits the raw string on whitespace, so it never runs the
+# probe at all. Omitting "CMD" hits the branch that prepends it for us and
+# works on every version — do not add it back.
 ENGINE_ARGS=()
 if [[ "${ENGINE}" == podman ]]; then
-    ENGINE_ARGS=(--health-cmd '["CMD","/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]')
+    ENGINE_ARGS=(--health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]')
 fi
 
 PHP_BIN=/usr/local/bin/frankenphp

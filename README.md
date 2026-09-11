@@ -55,14 +55,18 @@ Podman's inspection path never looks at the config's healthcheck field —
 healthcheck is in the image config; a Podman user has to pass it explicitly:
 
 ```bash
-podman run -d --health-cmd '["CMD","/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]' ghcr.io/aryonoco/baikal:0.12.1
+podman run -d --health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]' ghcr.io/aryonoco/baikal:0.12.1
 ```
 
 Under a Quadlet, the equivalent is:
 
 ```
-HealthCmd=["CMD","/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]
+HealthCmd=["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]
 ```
+
+The array above has no leading `"CMD"` on purpose: Podman before 5.8.0
+re-splits an array that starts with `"CMD"` into one useless token, so
+omitting it is what makes the check work across versions.
 
 Kubernetes ignores an image `HEALTHCHECK` entirely, on either engine, and
 wants the probe declared in the pod spec instead.
@@ -76,12 +80,14 @@ Port 8081 serves nothing else and is meant to stay unpublished.
 
 There is no shell in this image, so a health command given as a plain string —
 which Docker and Podman both run through `/bin/sh -c` — can never pass. An
-orchestrator that takes an explicit command needs the JSON array form. Docker,
-Podman, Compose, Swarm and Nomad want the leading `CMD`:
+explicit command needs the JSON array form, and the form is not the same
+everywhere. Compose's `healthcheck.test` wants a leading `CMD`:
 
-    ["CMD", "/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-health"]
+    test: ["CMD", "/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-health"]
 
-Kubernetes does not. An `exec` probe takes the argv and nothing else; a leading
+Podman's `--health-cmd` and a Quadlet's `HealthCmd=` do not — see above.
+
+Kubernetes does not either. An `exec` probe takes the argv and nothing else; a leading
 `"CMD"` fails with `"CMD": executable file not found`:
 
     exec:

@@ -50,9 +50,10 @@ breaking change.
   healthcheck only from a Docker-media-type manifest; this image publishes as
   an OCI index, so Podman's OCI inspection branch never reaches the config's
   healthcheck field — no version of Podman does. Give Podman users
-  `--health-cmd '["CMD","/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]'`
-  (a Quadlet's `HealthCmd=` takes the same value). Tracked upstream as
-  podman/podman#25454 and #18904.
+  `--health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]'`
+  (a Quadlet's `HealthCmd=` takes the same value) — no leading `"CMD"`,
+  because Podman before 5.8.0 re-splits such an array into one token instead
+  of running it. Tracked upstream as podman/podman#25454 and #18904.
 - **Never assert `2xx` or use `curl --fail` against `/dav.php`.** Unwritable
   config, a missing database and an unwritable database directory *all* return
   **200** with an exception page. Only an exact `401` proves PHP ran, config
