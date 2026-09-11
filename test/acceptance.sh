@@ -74,16 +74,26 @@ probe() {
 # with no shell: a plain-string command would be run through /bin/sh -c, fail
 # every check because there is no /bin/sh, and take the container to unhealthy.
 wait_for_health() {
-    local ctr="${1}" status=timeout deadline=$(( SECONDS + 150 ))
+    local ctr="${1}" status=timeout out='' deadline=$(( SECONDS + 150 ))
     while (( SECONDS < deadline )); do
-        status=$("${ENGINE}" inspect --format '{{.State.Health.Status}}' "${ctr}" 2>/dev/null) ||
+        if out=$("${ENGINE}" inspect --format '{{.State.Health.Status}}' "${ctr}" 2>&1); then
+            status="${out}"
+            case "${status}" in
+                healthy | unhealthy) break ;;
+                *) ;;
+            esac
+        else
             status=absent
-        case "${status}" in
-            healthy | unhealthy) break ;;
-            *) ;;
-        esac
+        fi
         sleep 2
     done
+    # An engine that cannot report health at all and a container that never
+    # became healthy both end here, and only the engine's own words separate
+    # them. Without this the failure reads `expected healthy, got absent`,
+    # which names neither.
+    if [[ "${status}" == absent ]]; then
+        printf '       | %s inspect: %s\n' "${ENGINE}" "${out}" >&2
+    fi
     printf '%s\n' "${status}"
 }
 
