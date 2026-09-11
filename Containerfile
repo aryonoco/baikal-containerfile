@@ -61,7 +61,12 @@ LABEL org.opencontainers.image.source="https://github.com/aryonoco/baikal-contai
     org.opencontainers.image.vendor="Aryan Ameri"
 
 EXPOSE 8080 8081
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+# --timeout must clear baikal-health's own budget: it allows each of its two
+# sockets 4s and runs them in sequence, so a listener that accepts and never
+# answers costs 8s. A shorter timeout kills the probe mid-flight and records a
+# bare engine timeout instead of the probe's own stderr line, and with no shell
+# and no access log on :8081 that line is the only diagnostic there is.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD ["/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-health"]
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-bootstrap"]

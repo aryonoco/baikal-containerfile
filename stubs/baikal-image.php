@@ -6,7 +6,10 @@
 declare(strict_types=1);
 
 /*
- * Everything rootfs/usr/local/bin/baikal-bootstrap borrows from the image
+ * What the image's own PHP borrows from the Baikal tree. Two files need it:
+ * rootfs/usr/local/bin/baikal-bootstrap uses both Yaml methods and
+ * BAIKAL_VERSION, and rootfs/usr/local/share/baikal-health/index.php uses
+ * Yaml::parseFile. Trimming this to what the bootstrap needs breaks the other.
  */
 
 namespace Symfony\Component\Yaml {

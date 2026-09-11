@@ -6,8 +6,8 @@
 declare(strict_types=1);
 
 /*
- * The only definition of "healthy" in this image. rootfs/usr/local/bin/baikal-health
- * is a client for it rather than a second opinion.
+ * The endpoint half of the health definition: everything provable without going
+ * through sabre. rootfs/usr/local/bin/baikal-health adds the half that cannot be.
  *
  * The reasons name the check that failed and never a filesystem path.
  */
@@ -19,9 +19,9 @@ use Symfony\Component\Yaml\Yaml;
  */
 function health(): array
 {
-    // Baked into the image at the same path baikal-bootstrap requires it from;
-    // the guard exists so PHPStan can prove the require resolves, not because
-    // this is expected to fail outside a broken build.
+    // Unreachable in a serving container: baikal-bootstrap exits 1 rather than
+    // pcntl_exec the server when this file is missing, and the root filesystem
+    // is read-only, so nothing that answers on :8081 can be without it.
     if (!is_file('/var/www/baikal/vendor/autoload.php')) {
         return [503, 'vendor autoloader missing'];
     }
@@ -64,8 +64,12 @@ function health(): array
     }
 
     try {
+        // Read-only, so the probe cannot create the database it is inspecting.
+        // An empty db.sqlite left behind here would permanently silence
+        // baikal-bootstrap's refusal to boot a config with no database.
         $pdo = new PDO('sqlite:' . $dbFile, null, null, [
             PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+            Pdo\Sqlite::ATTR_OPEN_FLAGS => Pdo\Sqlite::OPEN_READONLY,
         ]);
         // Proves the schema is present, not merely that the file is.
         $pdo->query('SELECT count(*) FROM users');

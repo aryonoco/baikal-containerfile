@@ -39,11 +39,11 @@ breaking change.
 | Root filesystem | **read-only** |
 | User | uid/gid **65532**, never root |
 | Listen port | **8080** for DAV — never 80 |
-| Health port | **8081** — health only, never published, never serves DAV |
+| Health port | **8081** — health only, never serves DAV, meant to stay unpublished |
 | tmpfs required | exactly one: `/tmp` |
 | Volume required | exactly one: `/data` |
 | Outbound network | **none** |
-| Healthy | `GET /dav.php` returns **exactly 401** |
+| Healthy | the shipped probe: `/healthz` **200** and `GET /dav.php` **exactly 401** |
 
 - **Never assert `2xx` or use `curl --fail` against `/dav.php`.** Unwritable
   config, a missing database and an unwritable database directory *all* return

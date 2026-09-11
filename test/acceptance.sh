@@ -71,8 +71,8 @@ probe() {
 
 # Watches the engine's own health machinery rather than running the probe
 # ourselves. This is what proves a JSON-array HealthCmd executes in an image
-# with no shell: a plain-string command would be run through /bin/sh -c and
-# could never leave "starting".
+# with no shell: a plain-string command would be run through /bin/sh -c, fail
+# every check because there is no /bin/sh, and take the container to unhealthy.
 wait_for_health() {
     local ctr="${1}" status=timeout deadline=$(( SECONDS + 150 ))
     while (( SECONDS < deadline )); do
@@ -190,6 +190,11 @@ probe baikal-acc-internal probe-egress
 probe baikal-acc-internal seed-user "${DAV_USER}" "${DAV_PASS}"
 probe baikal-acc-internal probe-loopback "${DAV_USER}" "${DAV_PASS}"
 
+# The probe is the newest thing in the image that could want a network, so make
+# the "outbound network: none" claim cover it too.
+internal_health="$(wait_for_health baikal-acc-internal)"
+assert_eq healthy "${internal_health}" 'engine reports the internal container healthy'
+
 "${ENGINE}" rm -f baikal-acc-internal >/dev/null 2>&1
 "${ENGINE}" volume rm -f "${INTERNAL_VOL}" >/dev/null 2>&1
 "${ENGINE}" network rm -f "${INTERNAL_NET}" >/dev/null 2>&1
@@ -213,6 +218,12 @@ assert_contains 'cleared version drift: 0.10.1' 'drift was cleared' \
     "${ENGINE}" logs baikal-acc
 
 echo '== 13. failure rules refuse rather than serve'
+probe baikal-acc damage-db
+# The state only /healthz can see: the database is present and writable, so
+# sabre still answers 401 without ever touching it.
+assert_status 503 '/healthz with the database damaged' "${HEALTH_BASE}/healthz"
+assert_status 401 '/dav.php with the database damaged' "${BASE}/dav.php"
+
 probe baikal-acc remove-db
 assert_status 503 '/healthz with the database removed' "${HEALTH_BASE}/healthz"
 rc=0

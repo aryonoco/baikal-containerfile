@@ -25,7 +25,9 @@
 	}
 }
 
-# Internal health listener, never published.
+# Internal health listener, meant to stay unpublished. Deliberately carries no
+# `log` block: HEALTHCHECK asks for /healthz every 30s, and those thousands of
+# access-log lines a day would bury :8080's, which are the ones worth reading.
 :8081 {
 	root /usr/local/share/baikal-health
 	handle /healthz {
