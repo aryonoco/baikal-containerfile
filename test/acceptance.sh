@@ -106,6 +106,9 @@ assert_contains ok '/healthz says ok' \
 # The health listener is not the DAV listener. Publishing it must not publish DAV.
 assert_status 404 '/dav.php on the health listener' "${HEALTH_BASE}/dav.php"
 assert_status 404 '/ on the health listener' "${HEALTH_BASE}/"
+rc=0
+"${ENGINE}" exec baikal-acc "${PHP_BIN}" php-cli /usr/local/bin/baikal-health || rc=$?
+assert_eq 0 "${rc}" 'baikal-health exits 0 on a healthy container'
 
 echo '== 5. no shell in the image'
 probe baikal-acc assert-no-shell
@@ -192,6 +195,9 @@ assert_contains 'cleared version drift: 0.10.1' 'drift was cleared' \
 echo '== 13. failure rules refuse rather than serve'
 probe baikal-acc remove-db
 assert_status 503 '/healthz with the database removed' "${HEALTH_BASE}/healthz"
+rc=0
+"${ENGINE}" exec baikal-acc "${PHP_BIN}" php-cli /usr/local/bin/baikal-health || rc=$?
+assert_eq 1 "${rc}" 'baikal-health exits 1 with the database removed'
 "${ENGINE}" rm -f baikal-acc >/dev/null
 
 "${ENGINE}" run --rm "${CONFINE[@]}" --network "${NET}" -v baikal-acc-nopw:/data "${IMAGE}" >/dev/null 2>&1

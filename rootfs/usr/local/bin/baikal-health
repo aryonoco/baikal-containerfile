@@ -1,0 +1,73 @@
+#!/usr/bin/env php
+<?php
+
+// SPDX-License-Identifier: BSD-2-Clause
+// SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
+
+declare(strict_types=1);
+
+/*
+ * The container's health probe, and what HEALTHCHECK runs.
+ *
+ * Both assertions are needed because neither implies the other: /healthz
+ * proves the config and the database, and the exact 401 proves FrankenPHP is
+ * serving, PHP is executing, Baikal boots and sabre's auth is wired.
+ *
+ * fsockopen rather than the http stream wrapper, which allow_url_fopen gates
+ * and an operator can turn off in a mounted php.ini.
+ */
+
+const HOST = '127.0.0.1';
+const HEALTH_PORT = 8081;
+const DAV_PORT = 8080;
+const TIMEOUT = 4;
+
+function statusOf(string $host, int $port, string $path): string
+{
+    $errno = 0;
+    $errstr = '';
+    $socket = @fsockopen($host, $port, $errno, $errstr, TIMEOUT);
+    if ($socket === false) {
+        return sprintf('no connection (errno %d: %s)', $errno, $errstr);
+    }
+
+    stream_set_timeout($socket, TIMEOUT);
+    // HTTP/1.0 so the server closes rather than waiting on keep-alive.
+    fwrite($socket, "GET $path HTTP/1.0\r\nHost: $host\r\nConnection: close\r\n\r\n");
+    $statusLine = fgets($socket);
+    fclose($socket);
+
+    if ($statusLine === false) {
+        return 'no status line';
+    }
+
+    if (preg_match('#^HTTP/\S+\s+(\d{3})#', $statusLine, $matches) !== 1) {
+        return 'unparseable status line';
+    }
+
+    return $matches[1];
+}
+
+function check(string $host, int $port, string $path, string $expected): int
+{
+    $found = statusOf($host, $port, $path);
+    if ($found === $expected) {
+        return 0;
+    }
+
+    fwrite(STDERR, sprintf(
+        "baikal-health: http://%s:%d%s expected %s, got %s\n",
+        $host,
+        $port,
+        $path,
+        $expected,
+        $found,
+    ));
+
+    return 1;
+}
+
+$failures = check(HOST, HEALTH_PORT, '/healthz', '200')
+    + check(HOST, DAV_PORT, '/dav.php', '401');
+
+exit($failures === 0 ? 0 : 1);

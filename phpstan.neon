@@ -9,6 +9,7 @@ parameters:
     phpVersion: 80500
     paths:
         - rootfs/usr/local/bin/baikal-bootstrap
+        - rootfs/usr/local/bin/baikal-health
         - rootfs/usr/local/share/baikal-health/index.php
         - test/in-container.php
 
