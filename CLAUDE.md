@@ -38,16 +38,30 @@ breaking change.
 | Capabilities | **none** (`--cap-drop ALL`) |
 | Root filesystem | **read-only** |
 | User | uid/gid **65532**, never root |
-| Listen port | **8080** — never 80 |
+| Listen port | **8080** for DAV — never 80 |
+| Health port | **8081** — health only, never serves DAV, meant to stay unpublished |
 | tmpfs required | exactly one: `/tmp` |
 | Volume required | exactly one: `/data` |
 | Outbound network | **none** |
-| Healthy | `GET /dav.php` returns **exactly 401** |
+| Healthy | the shipped probe: `/healthz` **200** and `GET /dav.php` **exactly 401** |
+| Engine healthcheck | Docker runs it automatically. **Podman does not** — pass `--health-cmd` yourself |
 
-- **Never assert `2xx` or use `curl --fail` for health.** Unwritable config, a
-  missing database and an unwritable database directory *all* return **200** with
-  an exception page. Only an exact `401` proves PHP ran, config parsed and is writable,
-  the version matches, and sabre/dav booted.
+- **Podman never sees this image's `HEALTHCHECK`.** Its `libimage` reads a
+  healthcheck only from a Docker-media-type manifest; this image publishes as
+  an OCI index, so Podman's OCI inspection branch never reaches the config's
+  healthcheck field — no version of Podman does. Give Podman users
+  `--health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]'`
+  (a Quadlet's `HealthCmd=` takes the same value) — no leading `"CMD"`,
+  because Podman before 5.8.0 re-splits such an array into one token instead
+  of running it. Tracked upstream as podman/podman#25454 and #18904.
+- **Never assert `2xx` or use `curl --fail` against `/dav.php`.** Unwritable
+  config, a missing database and an unwritable database directory *all* return
+  **200** with an exception page. Only an exact `401` proves PHP ran, config
+  parsed and is writable, the version matches, and sabre/dav booted. `/healthz`
+  on the health port is the one endpoint that answers conventionally — 200 or
+  503 — and it does not subsume the 401: it never touches sabre. The shipped
+  probe asserts both, and anything checking this image should run it rather
+  than reimplement either half.
 - **`BAIKAL_PATH_CONFIG` and `BAIKAL_PATH_SPECIFIC` need trailing slashes.** The
   framework concatenates them directly with `baikal.yaml` and `db/db.sqlite`
   (`Core/Frameworks/Flake/Framework.php:168-182`). A missing slash yields

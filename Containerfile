@@ -49,6 +49,8 @@ ENV BAIKAL_PATH_CONFIG=/data/config/ \
     XDG_CONFIG_HOME=/tmp
 
 COPY --chown=root:root --chmod=0755 rootfs/usr/local/bin/baikal-bootstrap /usr/local/bin/baikal-bootstrap
+COPY --chown=root:root rootfs/usr/local/share/baikal-health /usr/local/share/baikal-health
+COPY --chown=root:root --chmod=0755 rootfs/usr/local/bin/baikal-health /usr/local/bin/baikal-health
 
 LABEL org.opencontainers.image.source="https://github.com/aryonoco/baikal-containerfile" \
     org.opencontainers.image.url="https://github.com/aryonoco/baikal-containerfile" \
@@ -58,6 +60,13 @@ LABEL org.opencontainers.image.source="https://github.com/aryonoco/baikal-contai
     org.opencontainers.image.licenses="BSD-2-Clause" \
     org.opencontainers.image.vendor="Aryan Ameri"
 
-EXPOSE 8080
+EXPOSE 8080 8081
+# --timeout must clear baikal-health's own budget: it allows each of its two
+# sockets 4s and runs them in sequence, so a listener that accepts and never
+# answers costs 8s. A shorter timeout kills the probe mid-flight and records a
+# bare engine timeout instead of the probe's own stderr line, and with no shell
+# and no access log on :8081 that line is the only diagnostic there is.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD ["/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-health"]
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-bootstrap"]

@@ -19,15 +19,13 @@ in a single mostly-static binary on a Debian Trixie-based distroless base.
 | Capabilities | none (`--cap-drop ALL`) |
 | Root filesystem | read-only |
 | User | uid/gid 65532 (`nonroot`) |
-| Port | 8080 |
+| Port | 8080 (DAV), 8081 (health, do not publish) |
 | tmpfs required | `/tmp` |
 | Volume required | `/data` |
 | Shell in image | none |
 | Package manager | none |
 | Outbound network | none |
-| Healthy | `GET /dav.php` returns **exactly 401** |
-
-**Health check must assert 401.** Every Baikal failure mode (unwritable config, missing database, unwritable database directory) returns **200** with an exception page, so `curl --fail` reports a dead server as healthy.
+| Healthy | the shipped probe: `/healthz` 200 **and** `GET /dav.php` exactly 401 |
 
 ## Running
 
@@ -41,6 +39,76 @@ podman run -d --name baikal \
   -e BAIKAL_ADMIN_PASSWORD=... \
   ghcr.io/aryonoco/baikal:0.12.1
 ```
+
+## Health
+
+Every Baikal failure mode — unwritable config, missing database, unwritable
+database directory — returns **200** with an exception page, so `curl --fail`
+reports a dead server as healthy. The image therefore ships its own probe and
+declares a `HEALTHCHECK`. Docker runs it with no configuration.
+
+Podman does not. Podman's `libimage` reads a healthcheck only out of a
+Docker-media-type manifest, and this image is published as an OCI index, so
+Podman's inspection path never looks at the config's healthcheck field —
+[podman/podman#25454](https://github.com/containers/podman/issues/25454) and
+[#18904](https://github.com/containers/podman/issues/18904) track it. The
+healthcheck is in the image config; a Podman user has to pass it explicitly:
+
+```bash
+podman run -d --health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]' ghcr.io/aryonoco/baikal:0.12.1
+```
+
+Under a Quadlet, the equivalent is:
+
+```
+HealthCmd=["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]
+```
+
+The array above has no leading `"CMD"` on purpose: Podman before 5.8.0
+re-splits an array that starts with `"CMD"` into one useless token, so
+omitting it is what makes the check work across versions.
+
+Kubernetes ignores an image `HEALTHCHECK` entirely, on either engine, and
+wants the probe declared in the pod spec instead.
+
+| | |
+|---|---|
+| `/usr/local/bin/baikal-health` | The in-container probe `HEALTHCHECK` runs. Asserts `/healthz` is 200 **and** `/dav.php` is exactly 401 |
+| `http://127.0.0.1:8081/healthz` | 200 `ok`, or 503 naming the failed check. Verifies the config parses, is writable and carries a `configured_version`, and that the database opens with its schema present |
+
+Port 8081 serves nothing else and is meant to stay unpublished.
+
+There is no shell in this image, so a health command given as a plain string —
+which Docker and Podman both run through `/bin/sh -c` — can never pass. An
+explicit command needs the JSON array form, and the form is not the same
+everywhere. Compose's `healthcheck.test` wants a leading `CMD`:
+
+    test: ["CMD", "/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-health"]
+
+Podman's `--health-cmd` and a Quadlet's `HealthCmd=` do not — see above.
+
+Kubernetes does not either. An `exec` probe takes the argv and nothing else; a leading
+`"CMD"` fails with `"CMD": executable file not found`:
+
+    exec:
+      command: ["/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-health"]
+
+Prefer that to an `httpGet` probe against `/healthz`. `httpGet` reaches a
+`containerPort` directly and so needs no publishing, but it cannot express the
+exact 401, and `/healthz` on its own is only half of what healthy means here.
+
+Two answers that look like defects and are not:
+
+- **A full `/data` passes every check.** `is_writable()` tests permission, not
+  free space, and the 401 never touches the disk
+- **`http://host:8080/healthz` returns 200 — from Baikal's own front
+  controller**, not from the health endpoint, so a one-digit typo in the port
+  reports a false healthy. The health endpoint is only ever on 8081
+
+There is no shell and no access log on `:8081`, so the name of the failed check
+is read back off the engine:
+
+    docker inspect --format '{{json .State.Health}}' <container>
 
 ## Env Vars
 

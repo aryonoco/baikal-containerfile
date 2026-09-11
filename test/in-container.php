@@ -28,6 +28,7 @@ const EGRESS_PROBE_PORT = 443;
 const EGRESS_PROBE_TIMEOUT = 3;
 const DIGEST_TABLE = 'users';
 const DIGEST_COLUMN = 'digesta1';
+const NOT_A_DATABASE = "this is not a SQLite database\n";
 
 /**
  * Collects assertions and renders them in the record format above.
@@ -416,6 +417,36 @@ function setVersion(string $version): void
 }
 
 /**
+ * Leave the database where it is, and make it stop being a database. This is
+ * the one fault only /healthz can see: the file is present and writable, so
+ * sabre still answers 401 to a credential-less request without ever reaching
+ * the backend.
+ */
+function damageDatabase(): void
+{
+    $file = databaseFile();
+
+    if (!file_exists($file)) {
+        throw new RuntimeException("$file does not exist, so there is nothing to damage");
+    }
+    if (@file_put_contents($file, NOT_A_DATABASE) === false) {
+        throw new RuntimeException("cannot overwrite $file");
+    }
+
+    clearstatcache(true, $file);
+
+    $damaged = @file_get_contents($file) === NOT_A_DATABASE;
+    $writable = is_writable($file);
+
+    Assertions::record(
+        $damaged && $writable,
+        "$file holds bytes that are not a SQLite database, and is still writable",
+        'damaged and writable',
+        ($damaged ? 'damaged' : 'unchanged') . ($writable ? ' and writable' : ' and not writable'),
+    );
+}
+
+/**
  * Take the database away 
  */
 function removeDatabase(): void
@@ -455,6 +486,7 @@ function commands(): array
         'wait-serving' => ['arguments' => ['seconds'], 'handler' => waitServing(...)],
         'seed-user' => ['arguments' => ['username', 'password'], 'handler' => seedUser(...)],
         'set-version' => ['arguments' => ['version'], 'handler' => setVersion(...)],
+        'damage-db' => ['arguments' => [], 'handler' => damageDatabase(...)],
         'remove-db' => ['arguments' => [], 'handler' => removeDatabase(...)],
     ];
 }
