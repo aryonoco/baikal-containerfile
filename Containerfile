@@ -49,6 +49,7 @@ ENV BAIKAL_PATH_CONFIG=/data/config/ \
     XDG_CONFIG_HOME=/tmp
 
 COPY --chown=root:root --chmod=0755 rootfs/usr/local/bin/baikal-bootstrap /usr/local/bin/baikal-bootstrap
+COPY --chown=root:root rootfs/usr/local/share/baikal-health /usr/local/share/baikal-health
 
 LABEL org.opencontainers.image.source="https://github.com/aryonoco/baikal-containerfile" \
     org.opencontainers.image.url="https://github.com/aryonoco/baikal-containerfile" \
@@ -58,6 +59,6 @@ LABEL org.opencontainers.image.source="https://github.com/aryonoco/baikal-contai
     org.opencontainers.image.licenses="BSD-2-Clause" \
     org.opencontainers.image.vendor="Aryan Ameri"
 
-EXPOSE 8080
+EXPOSE 8080 8081
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-bootstrap"]

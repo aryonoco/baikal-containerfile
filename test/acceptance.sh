@@ -10,6 +10,8 @@ ENGINE="${ENGINE:-docker}"
 IMAGE="${IMAGE:-localhost/baikal:dev}"
 PORT=18099
 INTERNAL_PORT=18089
+HEALTH_PORT=18081
+HEALTH_BASE="http://127.0.0.1:${HEALTH_PORT}"
 BASE="http://127.0.0.1:${PORT}"
 PASSWORD='correct horse battery staple'
 DAV_USER=alice
@@ -79,7 +81,7 @@ cleanup
 
 start() {
     "${ENGINE}" run -d --name baikal-acc "${CONFINE[@]}" \
-        --network "${NET}" -p "${PORT}:8080" \
+        --network "${NET}" -p "${PORT}:8080" -p "${HEALTH_PORT}:8081" \
         -v "${VOL}":/data \
         -e BAIKAL_ADMIN_PASSWORD="${PASSWORD}" \
         "${IMAGE}" >/dev/null
@@ -97,14 +99,22 @@ probe baikal-acc assert-pid1
 echo '== 3. health check is exactly 401'
 assert_status 401 '/dav.php' "${BASE}/dav.php"
 
-echo '== 4. no shell in the image'
+echo '== 4. the health endpoint answers on its own listener'
+assert_status 200 '/healthz' "${HEALTH_BASE}/healthz"
+assert_contains ok '/healthz says ok' \
+    curl -s --connect-timeout 5 --max-time 30 "${HEALTH_BASE}/healthz"
+# The health listener is not the DAV listener. Publishing it must not publish DAV.
+assert_status 404 '/dav.php on the health listener' "${HEALTH_BASE}/dav.php"
+assert_status 404 '/ on the health listener' "${HEALTH_BASE}/"
+
+echo '== 5. no shell in the image'
 probe baikal-acc assert-no-shell
 
-echo '== 5. process capability sets are all zero'
+echo '== 6. process capability sets are all zero'
 # The raw /proc/self/status line carries the labels CapEff/CapPrm
 probe baikal-acc assert-caps
 
-echo '== 6. DAV actually works'
+echo '== 7. DAV actually works'
 probe baikal-acc seed-user "${DAV_USER}" "${DAV_PASS}"
 
 assert_status 207 'authenticated PROPFIND' -u "${DAV_USER}:${DAV_PASS}" \
@@ -126,17 +136,17 @@ assert_status 207 'REPORT sync-collection' -u "${DAV_USER}:${DAV_PASS}" \
     --data '<?xml version="1.0"?><d:sync-collection xmlns:d="DAV:"><d:sync-token/><d:prop><d:getetag/></d:prop></d:sync-collection>' \
     "${BASE}/dav.php/calendars/${DAV_USER}/test/"
 
-echo '== 7. CardDAV works'
+echo '== 8. CardDAV works'
 assert_status 201 'MKCOL addressbook' -u "${DAV_USER}:${DAV_PASS}" \
     -X MKCOL -H 'Content-Type: application/xml' \
     --data '<?xml version="1.0"?><d:mkcol xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:carddav"><d:set><d:prop><d:resourcetype><d:collection/><c:addressbook/></d:resourcetype></d:prop></d:set></d:mkcol>' \
     "${BASE}/dav.php/addressbooks/${DAV_USER}/contacts/"
 
-echo '== 8. RFC 6764 .well-known discovery'
+echo '== 9. RFC 6764 .well-known discovery'
 assert_status 301 '/.well-known/caldav' "${BASE}/.well-known/caldav"
 assert_status 301 '/.well-known/carddav' "${BASE}/.well-known/carddav"
 
-echo '== 9. no egress required, measured from a genuinely --internal network'
+echo '== 10. no egress required, measured from a genuinely --internal network'
 "${ENGINE}" network create --internal "${INTERNAL_NET}" >/dev/null
 "${ENGINE}" run -d --name baikal-acc-internal "${CONFINE[@]}" \
     --network "${INTERNAL_NET}" -p "${INTERNAL_PORT}:8080" \
@@ -161,7 +171,7 @@ probe baikal-acc-internal probe-loopback "${DAV_USER}" "${DAV_PASS}"
 "${ENGINE}" volume rm -f "${INTERNAL_VOL}" >/dev/null 2>&1
 "${ENGINE}" network rm -f "${INTERNAL_NET}" >/dev/null 2>&1
 
-echo '== 10. warm restart preserves data'
+echo '== 11. warm restart preserves data'
 "${ENGINE}" restart baikal-acc >/dev/null
 wait_for_port "${BASE}/dav.php" || fail 'did not come back'
 assert_status 401 '/dav.php after restart' "${BASE}/dav.php"
@@ -169,7 +179,7 @@ assert_contains 'SUMMARY:acceptance' 'event survived restart' \
     curl -s --connect-timeout 5 --max-time 30 -u "${DAV_USER}:${DAV_PASS}" \
     "${BASE}/dav.php/calendars/${DAV_USER}/test/accept-1.ics"
 
-echo '== 11. version drift is cleared, never served as a 302'
+echo '== 12. version drift is cleared, never served as a 302'
 
 probe baikal-acc set-version 0.10.1
 "${ENGINE}" rm -f baikal-acc >/dev/null
@@ -179,8 +189,9 @@ assert_status 401 '/dav.php after version drift' "${BASE}/dav.php"
 assert_contains 'cleared version drift: 0.10.1' 'drift was cleared' \
     "${ENGINE}" logs baikal-acc
 
-echo '== 12. failure rules refuse rather than serve'
+echo '== 13. failure rules refuse rather than serve'
 probe baikal-acc remove-db
+assert_status 503 '/healthz with the database removed' "${HEALTH_BASE}/healthz"
 "${ENGINE}" rm -f baikal-acc >/dev/null
 
 "${ENGINE}" run --rm "${CONFINE[@]}" --network "${NET}" -v baikal-acc-nopw:/data "${IMAGE}" >/dev/null 2>&1

@@ -24,3 +24,15 @@
 		format json
 	}
 }
+
+# Internal health listener, never published.
+:8081 {
+	root /usr/local/share/baikal-health
+	handle /healthz {
+		rewrite * /index.php
+		php
+	}
+	handle {
+		respond 404
+	}
+}
