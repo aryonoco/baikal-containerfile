@@ -38,16 +38,21 @@ breaking change.
 | Capabilities | **none** (`--cap-drop ALL`) |
 | Root filesystem | **read-only** |
 | User | uid/gid **65532**, never root |
-| Listen port | **8080** — never 80 |
+| Listen port | **8080** for DAV — never 80 |
+| Health port | **8081** — health only, never published, never serves DAV |
 | tmpfs required | exactly one: `/tmp` |
 | Volume required | exactly one: `/data` |
 | Outbound network | **none** |
 | Healthy | `GET /dav.php` returns **exactly 401** |
 
-- **Never assert `2xx` or use `curl --fail` for health.** Unwritable config, a
-  missing database and an unwritable database directory *all* return **200** with
-  an exception page. Only an exact `401` proves PHP ran, config parsed and is writable,
-  the version matches, and sabre/dav booted.
+- **Never assert `2xx` or use `curl --fail` against `/dav.php`.** Unwritable
+  config, a missing database and an unwritable database directory *all* return
+  **200** with an exception page. Only an exact `401` proves PHP ran, config
+  parsed and is writable, the version matches, and sabre/dav booted. `/healthz`
+  on the health port is the one endpoint that answers conventionally — 200 or
+  503 — and it does not subsume the 401: it never touches sabre. The shipped
+  probe asserts both, and anything checking this image should run it rather
+  than reimplement either half.
 - **`BAIKAL_PATH_CONFIG` and `BAIKAL_PATH_SPECIFIC` need trailing slashes.** The
   framework concatenates them directly with `baikal.yaml` and `db/db.sqlite`
   (`Core/Frameworks/Flake/Framework.php:168-182`). A missing slash yields

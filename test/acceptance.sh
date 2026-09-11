@@ -69,6 +69,24 @@ probe() {
     return "${rc}"
 }
 
+# Watches the engine's own health machinery rather than running the probe
+# ourselves. This is what proves a JSON-array HealthCmd executes in an image
+# with no shell: a plain-string command would be run through /bin/sh -c and
+# could never leave "starting".
+wait_for_health() {
+    local ctr="${1}" status=timeout deadline=$(( SECONDS + 150 ))
+    while (( SECONDS < deadline )); do
+        status=$("${ENGINE}" inspect --format '{{.State.Health.Status}}' "${ctr}" 2>/dev/null) ||
+            status=absent
+        case "${status}" in
+            healthy | unhealthy) break ;;
+            *) ;;
+        esac
+        sleep 2
+    done
+    printf '%s\n' "${status}"
+}
+
 cleanup() {
     "${ENGINE}" rm -f baikal-acc baikal-acc-internal >/dev/null 2>&1 || true
     "${ENGINE}" volume rm -f "${VOL}" "${INTERNAL_VOL}" baikal-acc-nopw >/dev/null 2>&1 || true
@@ -109,6 +127,8 @@ assert_status 404 '/ on the health listener' "${HEALTH_BASE}/"
 rc=0
 "${ENGINE}" exec baikal-acc "${PHP_BIN}" php-cli /usr/local/bin/baikal-health || rc=$?
 assert_eq 0 "${rc}" 'baikal-health exits 0 on a healthy container'
+health_status="$(wait_for_health baikal-acc)"
+assert_eq healthy "${health_status}" 'engine reports the container healthy'
 
 echo '== 5. no shell in the image'
 probe baikal-acc assert-no-shell

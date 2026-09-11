@@ -19,15 +19,13 @@ in a single mostly-static binary on a Debian Trixie-based distroless base.
 | Capabilities | none (`--cap-drop ALL`) |
 | Root filesystem | read-only |
 | User | uid/gid 65532 (`nonroot`) |
-| Port | 8080 |
+| Port | 8080 (DAV), 8081 (health, do not publish) |
 | tmpfs required | `/tmp` |
 | Volume required | `/data` |
 | Shell in image | none |
 | Package manager | none |
 | Outbound network | none |
 | Healthy | `GET /dav.php` returns **exactly 401** |
-
-**Health check must assert 401.** Every Baikal failure mode (unwritable config, missing database, unwritable database directory) returns **200** with an exception page, so `curl --fail` reports a dead server as healthy.
 
 ## Running
 
@@ -41,6 +39,29 @@ podman run -d --name baikal \
   -e BAIKAL_ADMIN_PASSWORD=... \
   ghcr.io/aryonoco/baikal:0.12.1
 ```
+
+## Health
+
+Every Baikal failure mode — unwritable config, missing database, unwritable
+database directory — returns **200** with an exception page, so `curl --fail`
+reports a dead server as healthy. The image therefore ships its own probe and
+declares a `HEALTHCHECK`, and Docker and Podman check it correctly with no
+configuration.
+
+| | |
+|---|---|
+| `/usr/local/bin/baikal-health` | The in-container probe `HEALTHCHECK` runs. Asserts `/healthz` is 200 **and** `/dav.php` is exactly 401 |
+| `http://127.0.0.1:8081/healthz` | 200 `ok`, or 503 naming the failed check. Verifies the config parses, is writable and carries a `configured_version`, and that the database opens with its schema present |
+
+Port 8081 serves nothing else and is meant to stay unpublished. Kubernetes
+`httpGet` probes reach a `containerPort` directly, so they need no publishing —
+and they cannot express the 401, which is why the endpoint exists.
+
+There is no shell in this image, so a health command given as a plain string —
+which Docker and Podman both run through `/bin/sh -c` — can never pass. An
+orchestrator that takes an explicit command needs the JSON array form:
+
+    ["CMD", "/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-health"]
 
 ## Env Vars
 

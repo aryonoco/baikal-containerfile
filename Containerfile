@@ -61,5 +61,7 @@ LABEL org.opencontainers.image.source="https://github.com/aryonoco/baikal-contai
     org.opencontainers.image.vendor="Aryan Ameri"
 
 EXPOSE 8080 8081
+HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
+    CMD ["/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-health"]
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/frankenphp", "php-cli", "/usr/local/bin/baikal-bootstrap"]
