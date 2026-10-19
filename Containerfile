@@ -3,7 +3,7 @@
 
 # Only the twenty extensions which Baikal needs are included.
 ARG PHP_EXTENSIONS="dom,pdo,pdo_sqlite,sqlite3,zlib,mbstring,mbregex,iconv,session,xml,xmlreader,xmlwriter,simplexml,filter,tokenizer,ctype,pcntl,posix,opcache,openssl"
-ARG BUILDER_IMAGE=dunglas/frankenphp:static-builder-gnu@sha256:24532f4de8d358a6f773dd347a20c343a30c0c68783be9a223ecba1ea2ccfa0f
+ARG BUILDER_IMAGE=dunglas/frankenphp:static-builder-gnu@sha256:d9ad8e339510e7624b3925530ec69fcb8e9ba1b3f3fed457f8d308cb00973463
 ARG BAIKAL_VERSION=0.12.1
 ARG BAIKAL_SHA256=0449abb72b151d39d9c08c63cb83a05d9e9adb065b1165ef6786b0b6a13d203c
 ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2
