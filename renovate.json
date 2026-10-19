@@ -1,6 +1,9 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
+  "semanticCommits": "disabled",
+  "commitMessageAction": "update",
+  "commitBody": "{{#if (equals updateType 'digest')}}Upstream rebuilt the tag, so the pinned digest is stale.{{else}}Upstream published a newer release.{{/if}}\n\nDeveloped-by: Aryan Ameri <github@aryan.ameri.coffee>\nAssisted-by: <Renovate:renovate-{{{renovateVersion}}}>",
   "customManagers": [
     {
       "customType": "regex",
@@ -12,6 +15,26 @@
     }
   ],
   "packageRules": [
+    {
+      "description": "Subject prefix for the image's build inputs. Kernel style, 'subsystem: short description', because these are commits on main like any other.",
+      "matchManagers": ["dockerfile"],
+      "commitMessagePrefix": "build:"
+    },
+    {
+      "description": "Subject prefix for the Baikal release.",
+      "matchDepNames": ["sabre-io/Baikal"],
+      "commitMessagePrefix": "baikal:"
+    },
+    {
+      "description": "Subject prefix for the local toolchain: mise.toml and the composer-pinned PHPStan.",
+      "matchManagers": ["mise", "composer"],
+      "commitMessagePrefix": "tools:"
+    },
+    {
+      "description": "Subject prefix for the workflows' action pins and the Renovate image itself.",
+      "matchManagers": ["github-actions"],
+      "commitMessagePrefix": "ci:"
+    },
     {
       "description": "jq tags releases as jq-1.8.2. mise strips that prefix from aqua's registry entry; Renovate does not read the aqua registry, so without this every candidate version is discarded as unparseable and no PR is ever raised.",
       "matchDepNames": ["aqua:jqlang/jq"],
