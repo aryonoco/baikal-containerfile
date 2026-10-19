@@ -157,8 +157,9 @@ breaking change.
   suppression, anywhere, needs an explicit, comment-level justification beside
   it to be accepted
 - **`baikal.openvex.json` is a reachability claim, not a suppression list.** Each
-  statement names one advisory and the grpc version it was argued against, so a
-  FrankenPHP bump that moves grpc makes the finding reappear. Re-argue it then;
+  statement names one advisory and the exact component version it was argued
+  against, so a FrankenPHP bump that moves that component makes the finding
+  reappear. Re-argue it then;
   widening a statement to cover the new version without doing so is a lie the
   scanner cannot catch
 - REUSE-compliant SPDX headers on every file; licence is **BSD-2-Clause**
