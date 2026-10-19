@@ -1,8 +1,6 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
-  "timezone": "Australia/Sydney",
-  "schedule": ["before 6am on monday"],
   "customManagers": [
     {
       "customType": "regex",

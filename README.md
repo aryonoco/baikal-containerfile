@@ -129,6 +129,26 @@ Settings changed through the admin UI persists.
 `/.well-known/caldav` and `/.well-known/carddav` as redirects to the DAV root
 `/dav.php/` with a **relative** target.
 
+## Dependency updates
+
+Every input to the image is pinned: the builder and runtime images by digest,
+Baikal by version and checksum. A pin only moves through a pull request, and
+[Renovate](https://docs.renovatebot.com/) opens those. It runs every morning
+from `.github/workflows/renovate.yml` in this repository, as a GitHub App
+installed here and nowhere else, and reports on the Dependency Dashboard
+issue. A fork needs its own App:
+
+1. Create a GitHub App with its webhook turned off and these repository
+   permissions: Checks, Commit statuses, Contents, Issues, Pull requests and
+   Workflows read and write; Metadata read. Install it on this repository
+   only.
+2. Create an environment called `renovate` whose deployment branches are
+   limited to `main`. Give it a variable `RENOVATE_APP_CLIENT_ID` holding the
+   App's client ID, and a secret `RENOVATE_APP_PRIVATE_KEY` holding a private
+   key generated for the App.
+3. Run the `renovate` workflow by hand once. The Dependency Dashboard issue
+   appears, listing every dependency Renovate found.
+
 ## AI/LLM Disclosure
 
 This project was developed with significant LLM involvement. Each git commit contains an `Assisted-by:` tag detailing the particular model/tool used.
