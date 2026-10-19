@@ -77,7 +77,7 @@ breaking change.
   this repository collects them on its own.** Rebuilding an unchanged
   Containerfile does not pick them up. **Renovate is the update path**: a digest
   bump arrives as a reviewable pull request that leaves a record of what moved
-  and when, which a blind rebuild does not. CI's weekly run exists to catch
+  and when, which a blind rebuild does not. CI's daily run exists to catch
   upstream breakage early — a release URL that moved, a builder that changed
   behaviour — and deliberately does not publish
 - **The binary must never carry a file capability.** The official FrankenPHP build
