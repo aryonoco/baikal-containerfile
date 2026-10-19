@@ -12,6 +12,47 @@
       "matchStrings": ["ARG BAIKAL_VERSION=(?<currentValue>\\S+)"],
       "depNameTemplate": "sabre-io/Baikal",
       "datasourceTemplate": "github-releases"
+    },
+    {
+      "customType": "regex",
+      "description": "ARG PHP_VERSION, which build-static.sh would otherwise resolve to the newest 8.5 at build time. php-src tags releases as php-8.5.11.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": ["ARG PHP_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "php/php-src",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^php-(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "customType": "regex",
+      "description": "ARG CADDY_VERSION, which xcaddy would otherwise resolve to the newest Caddy at build time.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": ["ARG CADDY_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "github.com/caddyserver/caddy/v2",
+      "datasourceTemplate": "go"
+    },
+    {
+      "customType": "regex",
+      "description": "ARG CBROTLI_VERSION, which xcaddy would otherwise resolve to the newest plugin at build time.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": ["ARG CBROTLI_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "github.com/dunglas/caddy-cbrotli",
+      "datasourceTemplate": "go"
+    },
+    {
+      "customType": "regex",
+      "description": "ARG MERCURE_VERSION, which xcaddy would otherwise resolve to the newest plugin at build time.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": ["ARG MERCURE_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "github.com/dunglas/mercure/caddy",
+      "datasourceTemplate": "go"
+    },
+    {
+      "customType": "regex",
+      "description": "ARG VULCAIN_VERSION, which xcaddy would otherwise resolve to the newest plugin at build time.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": ["ARG VULCAIN_VERSION=(?<currentValue>\\S+)"],
+      "depNameTemplate": "github.com/dunglas/vulcain/caddy",
+      "datasourceTemplate": "go"
     }
   ],
   "packageRules": [
@@ -19,6 +60,34 @@
       "description": "Subject prefix for the image's build inputs. Kernel style, 'subsystem: short description', because these are commits on main like any other.",
       "matchManagers": ["dockerfile"],
       "commitMessagePrefix": "build:"
+    },
+    {
+      "description": "Subject prefix for the binary's pinned roots, which are build inputs too.",
+      "matchDepNames": [
+        "php/php-src",
+        "github.com/caddyserver/caddy/v2",
+        "github.com/dunglas/caddy-cbrotli",
+        "github.com/dunglas/mercure/caddy",
+        "github.com/dunglas/vulcain/caddy"
+      ],
+      "commitMessagePrefix": "build:"
+    },
+    {
+      "description": "One PR for the builder, Caddy and its plugins. A FrankenPHP release can require a newer Caddy or plugin, and test/pinned-versions.sh fails any build whose binary disagrees with a pin, so moving one without the others goes red.",
+      "matchDepNames": [
+        "dunglas/frankenphp",
+        "github.com/caddyserver/caddy/v2",
+        "github.com/dunglas/caddy-cbrotli",
+        "github.com/dunglas/mercure/caddy",
+        "github.com/dunglas/vulcain/caddy"
+      ],
+      "groupName": "frankenphp"
+    },
+    {
+      "description": "A PHP minor or major is a deliberate move, not a patch: it changes the language the extensions and Baikal run on. It waits for a tick on the Dependency Dashboard.",
+      "matchDepNames": ["php/php-src"],
+      "matchUpdateTypes": ["minor", "major"],
+      "dependencyDashboardApproval": true
     },
     {
       "description": "Subject prefix for the Baikal release.",
