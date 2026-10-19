@@ -77,7 +77,7 @@ breaking change.
   this repository collects them on its own.** Rebuilding an unchanged
   Containerfile does not pick them up. **Renovate is the update path**: a digest
   bump arrives as a reviewable pull request that leaves a record of what moved
-  and when, which a blind rebuild does not. CI's weekly run exists to catch
+  and when, which a blind rebuild does not. CI's daily run exists to catch
   upstream breakage early — a release URL that moved, a builder that changed
   behaviour — and deliberately does not publish
 - **The binary must never carry a file capability.** The official FrankenPHP build
@@ -157,8 +157,9 @@ breaking change.
   suppression, anywhere, needs an explicit, comment-level justification beside
   it to be accepted
 - **`baikal.openvex.json` is a reachability claim, not a suppression list.** Each
-  statement names one advisory and the grpc version it was argued against, so a
-  FrankenPHP bump that moves grpc makes the finding reappear. Re-argue it then;
+  statement names one advisory and the exact component version it was argued
+  against, so a FrankenPHP bump that moves that component makes the finding
+  reappear. Re-argue it then;
   widening a statement to cover the new version without doing so is a lie the
   scanner cannot catch
 - REUSE-compliant SPDX headers on every file; licence is **BSD-2-Clause**

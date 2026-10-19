@@ -12,10 +12,13 @@ on:
   pull_request:
   schedule:
     #
-    # Check to see if something outside this repository has changed. 
-    # Baikal release URL or its checksum, FrankenPHP
-    # static builder's behaviour the runner images. 
-    - cron: '17 4 * * 1'
+    # Check to see if something outside this repository has changed:
+    # the Baikal release URL or its checksum, the FrankenPHP static
+    # builder's behaviour, the runner images, or the vulnerability
+    # database the scan reads. Every morning, so a new advisory against
+    # the pinned image turns this red within a day rather than a week.
+    # 18:17 UTC is 05:17 in Melbourne under daylight saving, 04:17 outside it.
+    - cron: '17 18 * * *'
   workflow_dispatch:
 
 permissions: {}
@@ -97,7 +100,7 @@ jobs:
           if [ "${GITHUB_EVENT_NAME}" = schedule ]; then
             # The canary run. These two stages are the only ones that reach
             # outside this repository, so a cache hit on either means the
-            # weekly build tested nothing upstream.
+            # daily build tested nothing upstream.
             args+=(--no-cache-filter frankenphp-build --no-cache-filter fetch)
           else
             # reset=true replaces the export rather than appending to it, which

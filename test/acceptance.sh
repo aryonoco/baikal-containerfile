@@ -116,8 +116,35 @@ wait_for_health() {
     printf '%s\n' "${status}"
 }
 
+# Run a container that is meant to refuse to start, and print its exit status.
+# One that serves instead never exits, and a foreground `run` would wait on it
+# for ever, hanging the suite rather than failing it. So it runs detached, and
+# past the deadline this prints what happened instead of a status and removes
+# it, which fails the caller's assertion with the reason in it.
+WAIT_FOR_EXIT_SECONDS=60
+
+exit_status() {
+    local ctr=baikal-acc-exit running=unknown deadline=$(( SECONDS + WAIT_FOR_EXIT_SECONDS ))
+    "${ENGINE}" rm -f "${ctr}" >/dev/null 2>&1
+    if ! "${ENGINE}" run -d --name "${ctr}" "${@}" >/dev/null; then
+        printf 'never started\n'
+        return
+    fi
+    while (( SECONDS < deadline )); do
+        running=$("${ENGINE}" inspect --format '{{.State.Running}}' "${ctr}" 2>/dev/null) || break
+        [[ "${running}" == false ]] && break
+        sleep 1
+    done
+    if [[ "${running}" == false ]]; then
+        "${ENGINE}" inspect --format '{{.State.ExitCode}}' "${ctr}"
+    else
+        printf 'still running after %ss\n' "${WAIT_FOR_EXIT_SECONDS}"
+    fi
+    "${ENGINE}" rm -f "${ctr}" >/dev/null 2>&1
+}
+
 cleanup() {
-    "${ENGINE}" rm -f baikal-acc baikal-acc-internal >/dev/null 2>&1 || true
+    "${ENGINE}" rm -f baikal-acc baikal-acc-internal baikal-acc-exit >/dev/null 2>&1 || true
     "${ENGINE}" volume rm -f "${VOL}" "${INTERNAL_VOL}" baikal-acc-nopw >/dev/null 2>&1 || true
     "${ENGINE}" network rm -f "${NET}" "${INTERNAL_NET}" >/dev/null 2>&1 || true
 }
@@ -260,12 +287,12 @@ rc=0
 assert_eq 1 "${rc}" 'baikal-health exits 1 with the database removed'
 "${ENGINE}" rm -f baikal-acc >/dev/null
 
-"${ENGINE}" run --rm "${CONFINE[@]}" --network "${NET}" -v baikal-acc-nopw:/data "${IMAGE}" >/dev/null 2>&1
-assert_eq 1 "${?}" 'cold start with no admin password exits 1'
+status=$(exit_status "${CONFINE[@]}" --network "${NET}" -v baikal-acc-nopw:/data "${IMAGE}")
+assert_eq 1 "${status}" 'cold start with no admin password exits 1'
 
-"${ENGINE}" run --rm "${CONFINE[@]}" --network "${NET}" -v "${VOL}":/data \
-    -e BAIKAL_ADMIN_PASSWORD="${PASSWORD}" "${IMAGE}" >/dev/null 2>&1
-assert_eq 1 "${?}" 'config without database exits 1'
+status=$(exit_status "${CONFINE[@]}" --network "${NET}" -v "${VOL}":/data \
+    -e BAIKAL_ADMIN_PASSWORD="${PASSWORD}" "${IMAGE}")
+assert_eq 1 "${status}" 'config without database exits 1'
 
 echo
 if (( FAILURES == 0 )); then

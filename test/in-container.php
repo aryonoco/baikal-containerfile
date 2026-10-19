@@ -555,7 +555,13 @@ function main(array $arguments): int
 }
 
 /**
- * $argv exists only when register_argc_argv is on. 
+ * $argv exists only when register_argc_argv is on.
+ *
+ * The subcommand and operands are whatever follows this script's own path.
+ * The native CLI puts that path at $argv[0], but FrankenPHP 1.13.0's php-cli
+ * put its own binary there and shifted the script to $argv[1]
+ * (php/frankenphp#2690, fixed in 1.13.1). Finding the script by identity
+ * rather than by position reads both.
  *
  * @return list<string>
  */
@@ -573,9 +579,19 @@ function commandLine(): array
         }
     }
 
-    // Drop the script name. Everything after it is the subcommand and
-    // operands.
-    return array_slice($arguments, 1);
+    foreach ($arguments as $index => $argument) {
+        if (realpath($argument) === __FILE__) {
+            return array_slice($arguments, $index + 1);
+        }
+    }
+
+    fwrite(STDERR, sprintf(
+        "%s is not in argv, so there is no telling where the subcommand starts: %s\n",
+        __FILE__,
+        implode(' ', $arguments),
+    ));
+
+    return [];
 }
 
 exit(main(commandLine()));
