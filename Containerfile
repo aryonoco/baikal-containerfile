@@ -4,16 +4,36 @@
 # Only the twenty extensions which Baikal needs are included.
 ARG PHP_EXTENSIONS="dom,pdo,pdo_sqlite,sqlite3,zlib,mbstring,mbregex,iconv,session,xml,xmlreader,xmlwriter,simplexml,filter,tokenizer,ctype,pcntl,posix,opcache,openssl"
 ARG BUILDER_IMAGE=dunglas/frankenphp:static-builder-gnu@sha256:d9ad8e339510e7624b3925530ec69fcb8e9ba1b3f3fed457f8d308cb00973463
+# The binary's own roots. Unset, build-static.sh takes the newest PHP 8.5 from
+# php.net and xcaddy the newest Caddy and plugins, so two builds of one commit
+# ship different binaries. test/pinned-versions.sh checks the binary agrees.
+ARG PHP_VERSION=8.5.11
+ARG CADDY_VERSION=v2.11.7
+ARG CBROTLI_VERSION=v1.0.1
+ARG MERCURE_VERSION=v1.1.2
+ARG VULCAIN_VERSION=v1.4.5
 ARG BAIKAL_VERSION=0.12.1
 ARG BAIKAL_SHA256=0449abb72b151d39d9c08c63cb83a05d9e9adb065b1165ef6786b0b6a13d203c
 ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2
 
 FROM ${BUILDER_IMAGE} AS frankenphp-build
 ARG PHP_EXTENSIONS
+ARG PHP_VERSION
+ARG CADDY_VERSION
+ARG CBROTLI_VERSION
+ARG MERCURE_VERSION
+ARG VULCAIN_VERSION
 WORKDIR /go/src/app
 # glibc
-RUN PHP_EXTENSIONS="${PHP_EXTENSIONS}" ./build-static.sh
+RUN PHP_EXTENSIONS="${PHP_EXTENSIONS}" \
+    PHP_VERSION="${PHP_VERSION}" \
+    CADDY_VERSION="${CADDY_VERSION}" \
+    SPC_CMD_VAR_FRANKENPHP_XCADDY_MODULES="--with github.com/dunglas/caddy-cbrotli@${CBROTLI_VERSION} --with github.com/dunglas/mercure/caddy@${MERCURE_VERSION} --with github.com/dunglas/vulcain/caddy@${VULCAIN_VERSION}" \
+    ./build-static.sh
 RUN cp "$(ls /go/src/app/dist/frankenphp-linux-*)" /go/src/app/dist/frankenphp
+COPY test/pinned-versions.sh /tmp/pinned-versions.sh
+RUN /tmp/pinned-versions.sh /go/src/app/dist/frankenphp "${PHP_VERSION}" \
+    "${CADDY_VERSION}" "${CBROTLI_VERSION}" "${MERCURE_VERSION}" "${VULCAIN_VERSION}"
 
 FROM debian:13-slim AS fetch
 ARG BAIKAL_VERSION
