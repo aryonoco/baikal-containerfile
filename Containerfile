@@ -16,7 +16,7 @@ ARG VULCAIN_VERSION=v1.4.5
 # regex needs them adjacent and in this order.
 ARG BAIKAL_VERSION=0.13.0
 ARG BAIKAL_SHA256=81e74df123230e863f608d228fdd7b9a1a788f60b04d37e6973c302192e83f32
-ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2
+ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian13:nonroot@sha256:b7e81cb1af38d9345680e68bcf564d388f96304e25222030fc8c051faf8565b3
 
 FROM ${BUILDER_IMAGE} AS frankenphp-build
 ARG PHP_EXTENSIONS
