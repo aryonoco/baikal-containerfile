@@ -21,6 +21,11 @@ on:
   # A tick on the Dependency Dashboard takes effect now, not tomorrow.
   issues:
     types: [edited]
+  # Every merge. A merged PR can leave others conflicting with main, and
+  # Renovate rebases them on its next run; this makes that run the next few
+  # minutes rather than the next morning.
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions: {}

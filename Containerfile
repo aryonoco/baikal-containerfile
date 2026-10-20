@@ -12,6 +12,8 @@ ARG CADDY_VERSION=v2.11.7
 ARG CBROTLI_VERSION=v1.0.1
 ARG MERCURE_VERSION=v1.1.2
 ARG VULCAIN_VERSION=v1.4.5
+# Renovate moves these two in one PR and computes the checksum itself; its
+# regex needs them adjacent and in this order.
 ARG BAIKAL_VERSION=0.12.1
 ARG BAIKAL_SHA256=0449abb72b151d39d9c08c63cb83a05d9e9adb065b1165ef6786b0b6a13d203c
 ARG RUNTIME_IMAGE=gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2
