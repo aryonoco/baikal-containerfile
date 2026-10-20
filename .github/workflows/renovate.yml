@@ -1,0 +1,83 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
+
+# Self-hosted Renovate for this repository and no other. It authenticates as a
+# GitHub App installed here alone, so its pull requests trigger the build
+# workflow the way a person's would, and it can move the action pins under
+# .github/workflows, which a GITHUB_TOKEN may not write. The App's private
+# key lives in the `renovate` environment, which only main may deploy to.
+#
+# Setup is in the README, under "Dependency updates".
+
+name: renovate
+
+on:
+  # Every morning. This cron is Renovate's only clock: renovate.json sets no
+  # schedule of its own, so a run GitHub starts late still opens its pull
+  # requests instead of finding itself outside a window. 18:17 UTC is 05:17
+  # in Melbourne under daylight saving, 04:17 outside it.
+  schedule:
+    - cron: '17 18 * * *'
+  # A tick on the Dependency Dashboard takes effect now, not tomorrow.
+  issues:
+    types: [edited]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  renovate:
+    name: renovate
+    # Renovate rewrites the dashboard on every run, and an App's edits fire
+    # events where a GITHUB_TOKEN's would not. Without the sender check every
+    # run would schedule the next.
+    if: >-
+      github.event_name != 'issues'
+      || (github.event.issue.title == 'Dependency Dashboard'
+          && github.event.sender.type == 'User')
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    # For the App's key, not a deployment. The environment's branch policy
+    # still holds without one, and a daily run would otherwise bury the
+    # deployment history.
+    environment:
+      name: renovate
+      deployment: false
+    # Everything goes through the App token below; the job's own needs nothing.
+    permissions: {}
+    steps:
+      # Narrowed to this repository and to the permissions Renovate uses, even
+      # though the App's installation is already no wider than that.
+      - id: token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.RENOVATE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RENOVATE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-checks: write
+          permission-contents: write
+          permission-issues: write
+          permission-pull-requests: write
+          permission-statuses: write
+          permission-workflows: write
+
+      # No checkout. Renovate clones the repository through the token and reads
+      # renovate.json from the default branch.
+      - uses: renovatebot/github-action@a63d9a7bc606f7336fd20b47f2f32259a35e6213 # v46.3.9
+        with:
+          token: ${{ steps.token.outputs.token }}
+          renovate-image: ghcr.io/renovatebot/renovate
+          # The action's own default is the floating major tag. Renovate's
+          # github-actions manager reads this input and moves the pin, so the
+          # bot updates itself through a pull request like everything else.
+          renovate-version: 44.171.1
+        env:
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
+          RENOVATE_ONBOARDING: 'false'
+          RENOVATE_REQUIRE_CONFIG: required
+          # Commits go through the API, which GitHub signs as the App.
+          RENOVATE_PLATFORM_COMMIT: enabled
