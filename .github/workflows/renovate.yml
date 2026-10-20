@@ -21,8 +21,10 @@ on:
   # A tick on the Dependency Dashboard takes effect now, not tomorrow.
   issues:
     types: [edited]
-  # Every merge. A merged PR can leave others conflicting with main, and
-  # Renovate rebases them on its next run; this makes that run the next few
+  # Every merge. A merge leaves every other open PR tested against an older
+  # main, or conflicting with the new one, and GitHub re-runs nothing when a
+  # base moves. renovate.json's rebaseWhen has Renovate rebase each of them on
+  # its next run, so CI tests them again; this makes that run the next few
   # minutes rather than the next morning.
   push:
     branches: [main]

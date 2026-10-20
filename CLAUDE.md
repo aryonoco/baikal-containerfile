@@ -78,7 +78,9 @@ breaking change.
   Containerfile does not pick them up. **Renovate is the update path**: it runs
   every morning and after every merge to main, from
   `.github/workflows/renovate.yml`, as a GitHub App installed on this
-  repository alone (setup in the README). A Baikal release arrives with
+  repository alone (setup in the README). After a merge it rebases every
+  open PR left behind main, since GitHub re-runs no checks when a base moves
+  and a green check on a stale base proves nothing. A Baikal release arrives with
   `BAIKAL_SHA256` already computed from the release asset, and a digest bump
   arrives as a reviewable pull request that leaves a record of what moved and
   when, which a blind rebuild does not. Trivy cannot see FrankenPHP's own advisories — the

@@ -146,7 +146,9 @@ Baikal by version and checksum. A pin only moves through a pull request, and
 [Renovate](https://docs.renovatebot.com/) opens those. It runs every morning
 and after every merge to `main`, from `.github/workflows/renovate.yml` in this
 repository, as a GitHub App installed here and nowhere else, and reports on the
-Dependency Dashboard issue. A new Baikal release arrives with its checksum
+Dependency Dashboard issue. After a merge it rebases every open update that the
+merge left behind, so each is tested again against the new `main` before you
+merge it. A new Baikal release arrives with its checksum
 already computed, so every update, majors included, is reviewed and merged in
 the web interface alone. A fork needs its own App:
 
