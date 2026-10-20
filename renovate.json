@@ -7,11 +7,11 @@
   "customManagers": [
     {
       "customType": "regex",
-      "description": "ARG BAIKAL_VERSION. The dockerfile manager only reads an ARG that a FROM expands, and this one feeds a release URL.",
+      "description": "ARG BAIKAL_VERSION and the ARG BAIKAL_SHA256 beneath it, captured together so one PR moves both. The dockerfile manager only reads an ARG that a FROM expands, and these feed a release URL and its checksum. github-release-attachments finds the release asset whose SHA-256 is the pinned one, then downloads the same-named asset of the new release and hashes it, so no checksum is ever set by hand. The two ARGs must stay adjacent and in this order.",
       "managerFilePatterns": ["/^Containerfile$/"],
-      "matchStrings": ["ARG BAIKAL_VERSION=(?<currentValue>\\S+)"],
+      "matchStrings": ["ARG BAIKAL_VERSION=(?<currentValue>\\S+)\\nARG BAIKAL_SHA256=(?<currentDigest>[a-f0-9]{64})"],
       "depNameTemplate": "sabre-io/Baikal",
-      "datasourceTemplate": "github-releases"
+      "datasourceTemplate": "github-release-attachments"
     },
     {
       "customType": "regex",
@@ -84,12 +84,6 @@
       "groupName": "frankenphp"
     },
     {
-      "description": "A PHP minor or major is a deliberate move, not a patch: it changes the language the extensions and Baikal run on. It waits for a tick on the Dependency Dashboard.",
-      "matchDepNames": ["php/php-src"],
-      "matchUpdateTypes": ["minor", "major"],
-      "dependencyDashboardApproval": true
-    },
-    {
       "description": "Subject prefix for the Baikal release.",
       "matchDepNames": ["sabre-io/Baikal"],
       "commitMessagePrefix": "baikal:"
@@ -111,11 +105,13 @@
     },
     {
       "matchDepNames": ["sabre-io/Baikal"],
-      "labels": ["baikal", "needs-checksum"],
-      "prBodyNotes": [
-        "`ARG BAIKAL_SHA256` still holds the previous archive's checksum and is not updated by this PR. The build's `sha256sum -c` fails until it is set by hand:",
-        "```\ncurl -sL https://github.com/sabre-io/Baikal/releases/download/{{{newValue}}}/baikal-{{{newValue}}}.zip | shasum -a 256\n```"
-      ]
+      "labels": ["baikal"]
+    },
+    {
+      "description": "Never propose a new hash for a Baikal version already pinned. An archive swapped under the same version is a supply-chain alarm, not an update, and the daily canary's sha256sum -c goes red on it instead.",
+      "matchDepNames": ["sabre-io/Baikal"],
+      "matchUpdateTypes": ["digest"],
+      "enabled": false
     },
     {
       "matchDepNames": ["dunglas/frankenphp"],

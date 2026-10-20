@@ -134,9 +134,11 @@ Settings changed through the admin UI persists.
 Every input to the image is pinned: the builder and runtime images by digest,
 Baikal by version and checksum. A pin only moves through a pull request, and
 [Renovate](https://docs.renovatebot.com/) opens those. It runs every morning
-from `.github/workflows/renovate.yml` in this repository, as a GitHub App
-installed here and nowhere else, and reports on the Dependency Dashboard
-issue. A fork needs its own App:
+and after every merge to `main`, from `.github/workflows/renovate.yml` in this
+repository, as a GitHub App installed here and nowhere else, and reports on the
+Dependency Dashboard issue. A new Baikal release arrives with its checksum
+already computed, so every update, majors included, is reviewed and merged in
+the web interface alone. A fork needs its own App:
 
 1. Create a GitHub App with its webhook turned off and these repository
    permissions: Checks, Commit statuses, Contents, Issues, Pull requests and

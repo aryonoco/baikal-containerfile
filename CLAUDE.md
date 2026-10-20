@@ -76,10 +76,12 @@ breaking change.
   That obligation moves to the base image's own rebuilds — and **nothing in
   this repository collects them on its own.** Rebuilding an unchanged
   Containerfile does not pick them up. **Renovate is the update path**: it runs
-  every morning from `.github/workflows/renovate.yml` as a GitHub App installed
-  on this repository alone (setup in the README), and a digest bump arrives as
-  a reviewable pull request that leaves a record of what moved and when, which
-  a blind rebuild does not. Trivy cannot see FrankenPHP's own advisories — the
+  every morning and after every merge to main, from
+  `.github/workflows/renovate.yml`, as a GitHub App installed on this
+  repository alone (setup in the README). A Baikal release arrives with
+  `BAIKAL_SHA256` already computed from the release asset, and a digest bump
+  arrives as a reviewable pull request that leaves a record of what moved and
+  when, which a blind rebuild does not. Trivy cannot see FrankenPHP's own advisories — the
   build replaces the module with a local path, so the binary records no
   version for it to match — which makes the builder-digest PR the only way
   their fixes reach the image. CI's daily run exists to catch
