@@ -10,7 +10,7 @@ ARG BUILDER_IMAGE=dunglas/frankenphp:static-builder-gnu@sha256:d9ad8e339510e7624
 ARG PHP_VERSION=8.5.11
 ARG CADDY_VERSION=v2.11.7
 ARG CBROTLI_VERSION=v1.0.1
-ARG MERCURE_VERSION=v1.1.2
+ARG MERCURE_VERSION=v1.1.4
 ARG VULCAIN_VERSION=v1.4.5
 # Renovate moves these two in one PR and computes the checksum itself; its
 # regex needs them adjacent and in this order.
