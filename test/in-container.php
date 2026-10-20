@@ -29,6 +29,10 @@ const EGRESS_PROBE_TIMEOUT = 3;
 const DIGEST_TABLE = 'users';
 const DIGEST_COLUMN = 'digesta1';
 const NOT_A_DATABASE = "this is not a SQLite database\n";
+const DISTRIB_FILE = '/var/www/baikal/Core/Distrib.php';
+const SCHEMA_FILE = '/var/www/baikal/Core/Resources/Db/SQLite/db.sql';
+const SHARED_CALENDAR = 'test';
+const SHARE_URI = 'shared-by-acceptance';
 
 /**
  * Collects assertions and renders them in the record format above.
@@ -470,6 +474,180 @@ function removeDatabase(): void
     );
 }
 
+// --- upgrades ---------------------------------------------------------------
+
+/**
+ * Share the owner's calendar with the sharee the way an older schema allowed:
+ * access and share_invitestatus left NULL. Baikal 0.13.0's migration rebuilds
+ * calendarinstances and fills both in, so this row is old data that an
+ * upgrade has to carry across.
+ */
+function seedShare(string $owner, string $sharee): void
+{
+    $database = openDatabase();
+
+    $calendar = $database->prepare(
+        'SELECT calendarid FROM calendarinstances WHERE principaluri = ? AND uri = ?',
+    );
+    $calendar->execute(["principals/$owner", SHARED_CALENDAR]);
+    $calendarId = $calendar->fetchColumn();
+    if (!is_int($calendarId) && !is_string($calendarId)) {
+        throw new RuntimeException("principals/$owner has no calendar '" . SHARED_CALENDAR . "' to share");
+    }
+
+    $insert = $database->prepare(
+        'INSERT INTO calendarinstances '
+        . '(calendarid, principaluri, access, displayname, uri, share_href, share_invitestatus) '
+        . 'VALUES (?, ?, NULL, ?, ?, ?, NULL)',
+    );
+    $insert->execute([$calendarId, "principals/$sharee", 'Shared by ' . ucfirst($owner), SHARE_URI, "principals/$sharee"]);
+
+    Assertions::equals("$owner's calendar is shared with $sharee", '1', shareCount($database, $owner, $sharee));
+}
+
+function assertShare(string $owner, string $sharee): void
+{
+    Assertions::equals(
+        "$owner's share with $sharee survived the upgrade",
+        '1',
+        shareCount(openDatabase(), $owner, $sharee),
+    );
+}
+
+function shareCount(PDO $database, string $owner, string $sharee): string
+{
+    $query = $database->prepare(
+        'SELECT COUNT(*) FROM calendarinstances AS share '
+        . 'JOIN calendarinstances AS own ON own.calendarid = share.calendarid '
+        . 'WHERE own.principaluri = ? AND own.uri = ? '
+        . 'AND share.principaluri = ? AND share.uri = ? AND share.share_href = ?',
+    );
+    $query->execute(["principals/$owner", SHARED_CALENDAR, "principals/$sharee", SHARE_URI, "principals/$sharee"]);
+
+    return columnText($query->fetchColumn());
+}
+
+function assertCurrentVersion(): void
+{
+    if (!is_file(DISTRIB_FILE)) {
+        throw new RuntimeException(DISTRIB_FILE . ' is missing, so there is no version to compare with');
+    }
+    require_once DISTRIB_FILE;   // defines BAIKAL_VERSION
+
+    Assertions::equals(
+        'system.configured_version in ' . configFile() . " is this image's Baikal",
+        BAIKAL_VERSION,
+        readConfigScalar('configured_version'),
+    );
+}
+
+/**
+ * Compare every table of the live database with a fresh install's, built in
+ * memory from the schema this image ships. An upgrade is only finished when
+ * the upgraded database is indistinguishable from a new one: the same columns
+ * in the same order with the same types, NOT NULLs, defaults and primary keys,
+ * and the same sets of indexed columns. Index names are left out, because
+ * SQLite's names for UNIQUE constraints follow a table through a rename.
+ */
+function assertSchema(): void
+{
+    $fresh = new PDO('sqlite::memory:', null, null, [
+        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+    ]);
+    $fresh->exec(readOrThrow(SCHEMA_FILE));
+
+    $expected = schemaOf($fresh);
+    $found = schemaOf(openDatabase());
+
+    Assertions::equals(
+        'tables in ' . databaseFile() . ' are a fresh install\'s',
+        implode(' ', array_keys($expected)),
+        implode(' ', array_keys($found)),
+    );
+
+    foreach ($expected as $table => $shape) {
+        Assertions::equals("table $table has a fresh install's shape", $shape, $found[$table] ?? 'absent');
+    }
+}
+
+/**
+ * @return array<string, string> each table's shape on one line, by table name
+ */
+function schemaOf(PDO $database): array
+{
+    $shapes = [];
+    $tables = rows($database, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+
+    foreach ($tables as $table) {
+        $name = columnText($table['name'] ?? null);
+
+        $columns = [];
+        foreach (rows($database, 'PRAGMA table_info(' . quoted($database, $name) . ')') as $column) {
+            $columns[] = sprintf(
+                '%s %s notnull=%s default=%s pk=%s',
+                columnText($column['name'] ?? null),
+                columnText($column['type'] ?? null),
+                columnText($column['notnull'] ?? null),
+                ($column['dflt_value'] ?? null) === null ? 'none' : columnText($column['dflt_value']),
+                columnText($column['pk'] ?? null),
+            );
+        }
+
+        $indexes = [];
+        foreach (rows($database, 'PRAGMA index_list(' . quoted($database, $name) . ')') as $index) {
+            $indexColumns = [];
+            $indexName = columnText($index['name'] ?? null);
+            foreach (rows($database, 'PRAGMA index_info(' . quoted($database, $indexName) . ')') as $member) {
+                $indexColumns[] = columnText($member['name'] ?? null);
+            }
+            $indexes[] = (columnText($index['unique'] ?? null) === '1' ? 'unique' : 'index')
+                . '(' . implode(',', $indexColumns) . ')';
+        }
+        sort($indexes);
+
+        $shapes[$name] = 'columns: ' . implode(', ', $columns) . '; indexes: ' . implode(' ', $indexes);
+    }
+
+    return $shapes;
+}
+
+/**
+ * @return list<array<string, mixed>>
+ */
+function rows(PDO $database, string $sql): array
+{
+    $statement = $database->query($sql);
+    if ($statement === false) {
+        throw new RuntimeException("query failed: $sql");
+    }
+
+    $rows = [];
+    foreach ($statement->fetchAll(PDO::FETCH_ASSOC) as $row) {
+        if (!is_array($row)) {
+            continue;
+        }
+        $named = [];
+        foreach ($row as $column => $value) {
+            if (is_string($column)) {
+                $named[$column] = $value;
+            }
+        }
+        $rows[] = $named;
+    }
+
+    return $rows;
+}
+
+function quoted(PDO $database, string $identifier): string
+{
+    $quoted = $database->quote($identifier);
+    if ($quoted === false) {
+        throw new RuntimeException("cannot quote '$identifier'");
+    }
+
+    return $quoted;
+}
+
 // --- dispatch ---------------------------------------------------------------
 
 /**
@@ -488,6 +666,10 @@ function commands(): array
         'set-version' => ['arguments' => ['version'], 'handler' => setVersion(...)],
         'damage-db' => ['arguments' => [], 'handler' => damageDatabase(...)],
         'remove-db' => ['arguments' => [], 'handler' => removeDatabase(...)],
+        'seed-share' => ['arguments' => ['owner', 'sharee'], 'handler' => seedShare(...)],
+        'assert-share' => ['arguments' => ['owner', 'sharee'], 'handler' => assertShare(...)],
+        'assert-current-version' => ['arguments' => [], 'handler' => assertCurrentVersion(...)],
+        'assert-schema' => ['arguments' => [], 'handler' => assertSchema(...)],
     ];
 }
 

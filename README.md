@@ -123,6 +123,16 @@ is read back off the engine:
 Settings are written once. Changing a variable after first run has no effect.
 Settings changed through the admin UI persists.
 
+## Upgrading Baikal
+
+Start an image with a newer Baikal on an existing `/data`, and it runs
+Baikal's own upgrade before it serves anything: the same code as Baikal's
+admin upgrade page, migrations included. **Back up `/data` first.** Baikal
+cannot downgrade, the image refuses to start on a `/data` newer than itself,
+and `config/baikal.yaml` and `Specific/db/db.sqlite` are one restore unit. If
+the upgrade fails, the container refuses to start and logs why; restore the
+backup.
+
 ## Reverse proxy notes
 
 **Do not strip a path prefix** (sabre replies 403 "out of base uri"), and serve

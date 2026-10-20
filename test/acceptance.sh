@@ -20,6 +20,14 @@ VOL=baikal-acceptance
 INTERNAL_VOL=baikal-acceptance-internal
 NET=baikal-acceptance-net
 INTERNAL_NET=baikal-acceptance-internal-net
+UPGRADE_VOL=baikal-acceptance-upgrade
+SHAREE=bob
+SHAREE_PASS=builder
+
+# The image this repository first published, Baikal 0.12.1, pinned by digest
+# so it can never move. Upstream's upgrade is cumulative, so a volume it made
+# runs through every migration Baikal has added since, on every release.
+PREVIOUS_IMAGE=ghcr.io/aryonoco/baikal@sha256:123c2b94d5855c758f2b0840a910491f23210c90622351cae03f5fb527a33b65
 
 CONFINE=(--cap-drop ALL --read-only --user 65532:65532 --tmpfs /tmp)
 
@@ -144,8 +152,8 @@ exit_status() {
 }
 
 cleanup() {
-    "${ENGINE}" rm -f baikal-acc baikal-acc-internal baikal-acc-exit >/dev/null 2>&1 || true
-    "${ENGINE}" volume rm -f "${VOL}" "${INTERNAL_VOL}" baikal-acc-nopw >/dev/null 2>&1 || true
+    "${ENGINE}" rm -f baikal-acc baikal-acc-internal baikal-acc-exit baikal-acc-old >/dev/null 2>&1 || true
+    "${ENGINE}" volume rm -f "${VOL}" "${INTERNAL_VOL}" "${UPGRADE_VOL}" baikal-acc-nopw >/dev/null 2>&1 || true
     "${ENGINE}" network rm -f "${NET}" "${INTERNAL_NET}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
@@ -263,15 +271,19 @@ assert_contains 'SUMMARY:acceptance' 'event survived restart' \
     curl -s --connect-timeout 5 --max-time 30 -u "${DAV_USER}:${DAV_PASS}" \
     "${BASE}/dav.php/calendars/${DAV_USER}/test/accept-1.ics"
 
-echo '== 12. version drift is cleared, never served as a 302'
+echo '== 12. version drift is upgraded by Baikal itself, never served as a 302'
 
 probe baikal-acc set-version 0.10.1
 "${ENGINE}" rm -f baikal-acc >/dev/null
 start
 wait_for_port "${BASE}/dav.php" || fail 'did not start after drift'
 assert_status 401 '/dav.php after version drift' "${BASE}/dav.php"
-assert_contains 'cleared version drift: 0.10.1' 'drift was cleared' \
+assert_contains 'upgraded 0.10.1 -> ' "Baikal's own upgrade ran from 0.10.1" \
     "${ENGINE}" logs baikal-acc
+probe baikal-acc assert-current-version
+assert_contains 'SUMMARY:acceptance' 'event survived the upgrade' \
+    curl -s --connect-timeout 5 --max-time 30 -u "${DAV_USER}:${DAV_PASS}" \
+    "${BASE}/dav.php/calendars/${DAV_USER}/test/accept-1.ics"
 
 echo '== 13. failure rules refuse rather than serve'
 probe baikal-acc damage-db
@@ -293,6 +305,43 @@ assert_eq 1 "${status}" 'cold start with no admin password exits 1'
 status=$(exit_status "${CONFINE[@]}" --network "${NET}" -v "${VOL}":/data \
     -e BAIKAL_ADMIN_PASSWORD="${PASSWORD}" "${IMAGE}")
 assert_eq 1 "${status}" 'config without database exits 1'
+
+echo '== 14. a volume the published 0.12.1 image made upgrades cleanly'
+# Data goes in through the old image itself: two users, a calendar and an
+# event over DAV, and a share in the shape older schemas allowed.
+"${ENGINE}" run -d --name baikal-acc-old "${CONFINE[@]}" \
+    --network "${NET}" -p "${PORT}:8080" \
+    -v "${UPGRADE_VOL}":/data \
+    -e BAIKAL_ADMIN_PASSWORD="${PASSWORD}" \
+    "${PREVIOUS_IMAGE}" >/dev/null
+install_probe baikal-acc-old
+if wait_for_port "${BASE}/dav.php"; then pass 'the published image serves'; else fail 'the published image never served'; "${ENGINE}" logs baikal-acc-old; fi
+probe baikal-acc-old seed-user "${DAV_USER}" "${DAV_PASS}"
+probe baikal-acc-old seed-user "${SHAREE}" "${SHAREE_PASS}"
+assert_status 201 'MKCALENDAR on the published image' -u "${DAV_USER}:${DAV_PASS}" \
+    -X MKCALENDAR "${BASE}/dav.php/calendars/${DAV_USER}/test/"
+assert_status 201 'PUT event on the published image' -u "${DAV_USER}:${DAV_PASS}" \
+    -X PUT -H 'Content-Type: text/calendar' --data-binary "${EVENT}" \
+    "${BASE}/dav.php/calendars/${DAV_USER}/test/accept-1.ics"
+probe baikal-acc-old seed-share "${DAV_USER}" "${SHAREE}"
+"${ENGINE}" rm -f baikal-acc-old >/dev/null
+
+"${ENGINE}" run -d --name baikal-acc "${CONFINE[@]}" "${ENGINE_ARGS[@]}" \
+    --network "${NET}" -p "${PORT}:8080" -p "${HEALTH_PORT}:8081" \
+    -v "${UPGRADE_VOL}":/data \
+    -e BAIKAL_ADMIN_PASSWORD="${PASSWORD}" \
+    "${IMAGE}" >/dev/null
+install_probe baikal-acc
+if wait_for_port "${BASE}/dav.php"; then pass 'this image serves the upgraded volume'; else fail 'this image never served the upgraded volume'; "${ENGINE}" logs baikal-acc; fi
+assert_status 401 '/dav.php after the upgrade' "${BASE}/dav.php"
+assert_status 200 '/healthz after the upgrade' "${HEALTH_BASE}/healthz"
+probe baikal-acc assert-current-version
+probe baikal-acc assert-schema
+probe baikal-acc assert-share "${DAV_USER}" "${SHAREE}"
+assert_contains 'SUMMARY:acceptance' 'event from the published image survived the upgrade' \
+    curl -s --connect-timeout 5 --max-time 30 -u "${DAV_USER}:${DAV_PASS}" \
+    "${BASE}/dav.php/calendars/${DAV_USER}/test/accept-1.ics"
+"${ENGINE}" rm -f baikal-acc >/dev/null
 
 echo
 if (( FAILURES == 0 )); then

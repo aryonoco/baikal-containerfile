@@ -35,6 +35,43 @@ function info(string $msg): void {
     fwrite(STDOUT, "baikal-bootstrap: $msg\n");
 }
 
+/**
+ * Run Baikal's own VersionUpgrade::upgrade(), the code behind its admin
+ * upgrade page, without the web UI, so every migration upstream writes runs
+ * here too. It needs only two things Flake's bootstrap would set up:
+ * PROJECT_PATH_CONFIG and PROJECT_PATH_SPECIFIC for the config models, and the
+ * database in $GLOBALS['DB'], opened the way initDbSqlite() opens it. The rest
+ * of that bootstrap serves HTTP requests. upgrade() writes configured_version
+ * itself once it succeeds, and test/upstream-upgrade-api.sh fails the build if
+ * the members used here change.
+ *
+ * @param array<mixed> $database the database section of baikal.yaml
+ * @return list<string> upstream's own account of what it changed
+ */
+function upgradeDatabase(string $configDir, string $specificDir, string $dbFile, array $database, string $from): array {
+    define('PROJECT_PATH_CONFIG', $configDir);
+    define('PROJECT_PATH_SPECIFIC', $specificDir);
+    $GLOBALS['DB'] = new \Flake\Core\Database\Sqlite($dbFile);
+
+    $upgrade = new class () extends \BaikalAdmin\Controller\Install\VersionUpgrade {
+        /**
+         * @param array<mixed> $database
+         * @return list<string>
+         */
+        public function run(array $database, string $from, string $to): array {
+            $this->upgrade($database, $from, $to);
+            return array_values(array_filter($this->aSuccess, is_string(...)));
+        }
+    };
+
+    try {
+        return $upgrade->run($database, $from, BAIKAL_VERSION);
+    } catch (\Throwable $e) {
+        fail("Baikal's upgrade from $from to " . BAIKAL_VERSION . ' failed: '
+           . $e->getMessage() . '. Restore /data from a backup taken before this upgrade.');
+    }
+}
+
 function env(string $name, ?string $default = null): string {
     $v = getenv($name);
     if ($v === false || $v === '') {
@@ -139,17 +176,28 @@ if (!is_string($configured) || $configured === '') {
 }
 
 if (version_compare(BAIKAL_VERSION, $configured, '>')) {
-    // Upstream's VersionUpgrade::upgrade() gates every schema change on a
-    // threshold, so this is the same operation.
-    // test/upstream-migrations.sh fails the build if upstream changes.
+    // Below 0.10.0, upgrade() also rewrites the config format and the
+    // database settings, which this image's layout does not support.
     if (version_compare($configured, '0.10.0', '<')) {
         fail("configured_version $configured is below 0.10.0 and needs a real "
            . 'schema migration this image will not perform. Back up /data, then '
            . 'upgrade through Baikal 0.10.x first.');
     }
-    $onDisk['system']['configured_version'] = BAIKAL_VERSION;
-    file_put_contents($configFile, Yaml::dump($onDisk, 4, 4));
-    info("cleared version drift: $configured -> " . BAIKAL_VERSION);
+    if (!isset($onDisk['database']) || !is_array($onDisk['database'])) {
+        fail("$configFile has no database section. Refusing to guess.");
+    }
+    foreach (upgradeDatabase($configDir, $specificDir, $dbFile, $onDisk['database'], $configured) as $step) {
+        info("upgrade: $step");
+    }
+    $upgraded = Yaml::parseFile($configFile);
+    $now = is_array($upgraded) && isset($upgraded['system']) && is_array($upgraded['system'])
+        ? ($upgraded['system']['configured_version'] ?? null)
+        : null;
+    if ($now !== BAIKAL_VERSION) {
+        fail("Baikal's upgrade returned, but $configFile records version "
+           . var_export($now, true) . '. Refusing to serve a half-upgraded install.');
+    }
+    info("upgraded $configured -> " . BAIKAL_VERSION . " with Baikal's own VersionUpgrade");
 } elseif (version_compare(BAIKAL_VERSION, $configured, '<')) {
     // Baikal has no downgrade path at all.
     fail("configured_version $configured is NEWER than this image's "

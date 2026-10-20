@@ -106,8 +106,12 @@ breaking change.
   exec'd at all under `--cap-drop ALL` — it dies with `Operation not permitted`
   and exit 126 before PHP starts
 - **Never serve the `302 → /admin/install/` state.** On version drift the
-  container clears it or refuses to start. Serving it is a total CalDAV outage
-  that every client reports as an auth or sync failure
+  container runs Baikal's own upgrade or refuses to start. Serving it is a
+  total CalDAV outage that every client reports as an auth or sync failure
+- **A newer Baikal migrates `/data` on its first start, and that cannot be
+  undone.** Baikal has no downgrade path, and the image takes no snapshot of
+  its own: backing `/data` up before deploying a new Baikal version is the
+  operator's job, as upstream's own release notes ask
 - **Never generate a random admin password**, and **never create an empty
   database beside an existing config**.
 - The application tree stays root-owned and unwritten. Everything mutable lives
@@ -166,11 +170,17 @@ breaking change.
   install: `Tools::assertBaikalIsOk()` checks it
 - Baikal registers its iMIP mail plugin — its only outbound traffic — **if and
   only if** `system.invite_from` is non-empty. Empty is what keeps egress at zero
-- `VersionUpgrade::upgrade()` gates every migration on a threshold in exactly
-  `{0.2.3, 0.3.0, 0.4.0, 0.4.5, 0.5.1, 0.9.4, 0.10.0}`. At or above 0.10.0 it
-  performs **no DDL** — it writes one key and returns. That is why the entrypoint
-  may clear drift itself, and why `test/upstream-migrations.sh` fails the build
-  if those thresholds ever move
+- `VersionUpgrade::upgrade()` gates every migration on a version threshold,
+  and releases do add them: 0.13.0 rebuilds `calendarinstances` on SQLite,
+  and every database this image made before 0.13.0 has the shape that
+  rebuild fixes. So the bootstrap never clears drift by hand. It runs
+  upstream's own `upgrade()` headless — `upgradeDatabase()` in
+  `baikal-bootstrap` reaches the protected method through a subclass — and
+  refuses to start if it throws, or if `configured_version` did not move.
+  `test/upstream-upgrade-api.sh` fails the build if the members it relies on
+  change. The acceptance suite upgrades a volume made by the first published
+  image and compares every table with a fresh install's, so a migration that
+  silently did not run fails CI rather than shipping
 
 ## Code quality
 
