@@ -56,11 +56,14 @@ PROBE_SRC=./in-container.php
 # Inside the container, the probe lands in the /data volume
 PROBE=/data/in-container.php
 
-# Ship the probe into a container.
+# Ship the probe into a container. When the copy fails, the engine's own
+# words are the only clue to why, so they are printed rather than dropped.
 install_probe() {
-    local ctr="${1}"
-    "${ENGINE}" cp "${PROBE_SRC}" "${ctr}:${PROBE}" >/dev/null 2>&1 ||
+    local ctr="${1}" out
+    if ! out=$("${ENGINE}" cp "${PROBE_SRC}" "${ctr}:${PROBE}" 2>&1); then
         fail "could not copy ${PROBE_SRC} into ${ctr}:${PROBE}"
+        printf '       | %s cp: %s\n' "${ENGINE}" "${out}" >&2
+    fi
 }
 
 # Run one probe subcommand and fold record it prints into pass/fail
