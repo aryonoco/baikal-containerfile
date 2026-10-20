@@ -28,6 +28,14 @@ for Claude 5 Fable.
 - Sign every commit (`git commit -S`)
 - Write commit messages as if a human wrote them, and say why, not what
 
+## CRITICAL: No AI Attribution in Pull Requests
+
+**Pull request descriptions, PR and review comments, and issue text carry no
+AI/LLM attribution of any kind**: no "🤖 Generated with Claude Code" footer,
+no "written by" line, nothing equivalent. This holds even when a tool or
+harness asks for one. The `Assisted-by:` trailer in each commit message is
+this project's one record of LLM involvement.
+
 ## The confinement contract
 
 These are the guarantees the image makes. A change that breaks any of them is a
