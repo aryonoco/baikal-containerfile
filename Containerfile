@@ -3,14 +3,14 @@
 
 # Only the twenty extensions which Baikal needs are included.
 ARG PHP_EXTENSIONS="dom,pdo,pdo_sqlite,sqlite3,zlib,mbstring,mbregex,iconv,session,xml,xmlreader,xmlwriter,simplexml,filter,tokenizer,ctype,pcntl,posix,opcache,openssl"
-ARG BUILDER_IMAGE=dunglas/frankenphp:static-builder-gnu@sha256:b8d0d8772ea720fc7eada21c72361d3147f98da02071cf6b5883cce4c23feaf2
+ARG BUILDER_IMAGE=dunglas/frankenphp:static-builder-gnu@sha256:669ae28dbffe76ea4f498016d675824f87d750878c2181b5e19eae333a0d7333
 # The binary's own roots. Unset, build-static.sh takes the newest PHP 8.5 from
 # php.net and xcaddy the newest Caddy and plugins, so two builds of one commit
 # ship different binaries. test/pinned-versions.sh checks the binary agrees.
 ARG PHP_VERSION=8.5.12
 ARG CADDY_VERSION=v2.11.7
 ARG CBROTLI_VERSION=v1.0.1
-ARG MERCURE_VERSION=v1.1.4
+ARG MERCURE_VERSION=v1.1.5
 ARG VULCAIN_VERSION=v1.4.5
 # Renovate moves these two in one PR and computes the checksum itself; its
 # regex needs them adjacent and in this order.
