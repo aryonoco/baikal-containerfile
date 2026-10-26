@@ -9,6 +9,6 @@
 
 "aqua:jqlang/jq" = "1.8.2"
 
-"aqua:suzuki-shunsuke/pinact" = "5.0.1"
+"aqua:suzuki-shunsuke/pinact" = "5.0.2"
 "aqua:aquasecurity/trivy" = "0.76.1"
 "aqua:zizmorcore/zizmor" = "1.31.1"
