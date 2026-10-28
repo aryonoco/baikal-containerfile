@@ -91,16 +91,26 @@ breaking change.
   `.github/workflows/renovate.yml`, as a GitHub App installed on this
   repository alone (setup in the README). After a merge it rebases every
   open PR left behind main, since GitHub re-runs no checks when a base moves
-  and a green check on a stale base proves nothing. A Baikal release arrives with
+  and a green check on a stale base proves nothing. **It merges its own
+  PRs** once every check passes, with Rebase and merge, while the repository
+  variable `BAIKAL_AUTOMERGE` is `enabled`; any other value stops merging from
+  the next run. A Baikal release arrives with
   `BAIKAL_SHA256` already computed from the release asset, and a digest bump
-  arrives as a reviewable pull request that leaves a record of what moved and
+  arrives as a pull request that leaves a record of what moved and
   when, which a blind rebuild does not. Trivy cannot see FrankenPHP's own advisories — the
   build replaces the module with a local path, so the binary records no
   version for it to match — which makes the builder-digest PR the only way
-  their fixes reach the image. CI's daily run exists to catch
-  upstream breakage early — a release URL that moved, a builder that changed
-  behaviour — and deliberately does not publish. A new advisory against what
-  is already shipped surfaces there as a code scanning alert, not a red run
+  their fixes reach the image. **A merge never publishes.** CI's daily run
+  is the publishing slot: it publishes main when main moved since the commit
+  the published `:latest` was built from, so users see at most one new image
+  a day, and a manual run of `build` publishes at once for an urgent fix.
+  Neither ever moves `:latest` backwards (`test/publish-decision.sh`): after
+  a Baikal release, an older image refuses a `/data` the newer one migrated.
+  The daily run also catches upstream breakage early — a release URL that
+  moved, a builder that changed behaviour — and a new advisory against what
+  is already shipped surfaces there as a code scanning alert, not a red run.
+  `.github/workflows/stall.yml` fails each day that updates have stopped
+  flowing: a Renovate PR stuck, Renovate silent, or two slots lost in a row
 - **Every root of the FrankenPHP binary is pinned in the Containerfile**, not
   resolved at build time. Left alone, `build-static.sh` asks php.net for the
   newest PHP 8.5 and xcaddy asks the Go proxy for the newest Caddy and

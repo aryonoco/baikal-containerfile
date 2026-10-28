@@ -133,6 +133,11 @@ and `config/baikal.yaml` and `Specific/db/db.sqlite` are one restore unit. If
 the upgrade fails, the container refuses to start and logs why; restore the
 backup.
 
+A new Baikal release reaches `:latest` on its own: Renovate merges it once
+every check passes, and the next daily image carries it. To choose when your
+`/data` migrates, pin a version tag such as `:0.13.0` rather than `:latest`,
+and back up before you move the tag.
+
 ## Reverse proxy notes
 
 **Do not strip a path prefix** (sabre replies 403 "out of base uri"), and serve
@@ -143,14 +148,36 @@ backup.
 
 Every input to the image is pinned: the builder and runtime images by digest,
 Baikal by version and checksum. A pin only moves through a pull request, and
-[Renovate](https://docs.renovatebot.com/) opens those. It runs every morning
-and after every merge to `main`, from `.github/workflows/renovate.yml` in this
-repository, as a GitHub App installed here and nowhere else, and reports on the
-Dependency Dashboard issue. After a merge it rebases every open update that the
-merge left behind, so each is tested again against the new `main` before you
-merge it. A new Baikal release arrives with its checksum
-already computed, so every update, majors included, is reviewed and merged in
-the web interface alone. A fork needs its own App:
+[Renovate](https://docs.renovatebot.com/) opens those. It runs every morning,
+after every merge to `main` and whenever CI finishes on one of its branches,
+from `.github/workflows/renovate.yml` in this repository, as a GitHub App
+installed here and nowhere else, and reports on the Dependency Dashboard
+issue. A new Baikal release arrives with its checksum already computed.
+
+Renovate merges its own pull requests once every check on one has passed,
+majors and Baikal releases included, while the repository variable
+`BAIKAL_AUTOMERGE` is `enabled`. Any other value, or none, stops it from the
+next run, and Renovate goes on opening and rebasing pull requests for a person
+to merge:
+
+    gh variable set BAIKAL_AUTOMERGE --body disabled
+
+After a merge it rebases every open update the merge left behind, so each is
+tested again against the new `main` before it merges. Its merged commits land
+on `main` unsigned, because GitHub cannot sign a commit it rebases.
+
+**At most one new image a day.** A merge does not publish. The daily `build`
+run publishes `main` if anything merged since the last image, so however many
+updates land in a day, users see one new image at most. An urgent fix need not
+wait: a manual run of the `build` workflow from `main` (Actions, build, Run
+workflow) publishes at once.
+
+A daily stall check, `.github/workflows/stall.yml`, fails, and GitHub emails
+you, when a Renovate pull request has been open more than 14 days or red or
+pending for more than a day, when Renovate has not succeeded in a day, or when
+two daily runs should have published and did not.
+
+A fork needs its own App:
 
 1. Create a GitHub App with its webhook turned off and these repository
    permissions: Checks, Commit statuses, Contents, Issues, Pull requests and
@@ -162,6 +189,8 @@ the web interface alone. A fork needs its own App:
    key generated for the App.
 3. Run the `renovate` workflow by hand once. The Dependency Dashboard issue
    appears, listing every dependency Renovate found.
+4. When you are ready for Renovate to merge on its own, run
+   `gh variable set BAIKAL_AUTOMERGE --body enabled`.
 
 ## AI/LLM Disclosure
 
