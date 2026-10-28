@@ -25,7 +25,10 @@ Assisted-by: <NAME_OF_LLM_MODEL>
 E.g. `Assisted-by: <Claude:claude-4.6-opus>` for Claude Opus 4.6; `<Claude:claude-5-fable>`
 for Claude 5 Fable.
 
-- Sign every commit (`git commit -S`)
+- Sign every commit (`git commit -S`). One exception, the owner's choice
+  of a linear main: the commits Renovate merges itself with Rebase and
+  merge land on main unsigned, because GitHub cannot sign a commit it
+  rebases. Every commit a person writes stays signed
 - Write commit messages as if a human wrote them, and say why, not what
 
 ## CRITICAL: No AI Attribution in Pull Requests

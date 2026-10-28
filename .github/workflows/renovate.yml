@@ -7,6 +7,12 @@
 # .github/workflows, which a GITHUB_TOKEN may not write. The App's private
 # key lives in the `renovate` environment, which only main may deploy to.
 #
+# Renovate merges its own pull requests, through the API with Rebase and
+# merge, once every check on one has passed, and only while the repository
+# variable BAIKAL_AUTOMERGE is `enabled`. GitHub's own auto-merge stays off,
+# so that variable is the one switch. One merge per run: the merge leaves the
+# other pull requests behind main, and they rebase and re-test first.
+#
 # Setup is in the README, under "Dependency updates".
 
 name: renovate
@@ -28,13 +34,18 @@ on:
   # minutes rather than the next morning.
   push:
     branches: [main]
+  # CI finishing on one of Renovate's branches, so a green pull request
+  # merges now and the next follows, instead of each waiting for a morning.
+  # The job checks out nothing and runs nothing from the run that triggered
+  # it: Renovate reads only the default branch, so a fork's branch named
+  # renovate/* gains nothing by matching.
+  workflow_run: # zizmor: ignore[dangerous-triggers] justified in the comment above
+    workflows: [build]
+    types: [completed]
+    branches: ['renovate/**']
   workflow_dispatch:
 
 permissions: {}
-
-concurrency:
-  group: ${{ github.workflow }}
-  cancel-in-progress: false
 
 jobs:
   renovate:
@@ -46,6 +57,13 @@ jobs:
       github.event_name != 'issues'
       || (github.event.issue.title == 'Dependency Dashboard'
           && github.event.sender.type == 'User')
+    # On the job rather than the workflow. GitHub keeps one pending run per
+    # group and a newer one replaces it, so a run the `if` above skips (the
+    # App's own dashboard edit, every run) would otherwise take that slot and
+    # cancel a useful run waiting in it. A skipped job never joins the group.
+    concurrency:
+      group: renovate
+      cancel-in-progress: false
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     # For the App's key, not a deployment. The environment's branch policy
@@ -88,3 +106,9 @@ jobs:
           RENOVATE_REQUIRE_CONFIG: required
           # Commits go through the API, which GitHub signs as the App.
           RENOVATE_PLATFORM_COMMIT: enabled
+          # The kill switch, failing closed: Renovate merges only while
+          # BAIKAL_AUTOMERGE is `enabled`, compared without regard to case.
+          # Unset, empty or anything else forces automerge off, over
+          # renovate.json and every packageRule. It acts from the next run
+          # and cannot recall a merge already made.
+          RENOVATE_FORCE: ${{ case(vars.BAIKAL_AUTOMERGE == 'enabled', '', '{"automerge":false}') }}

@@ -3,6 +3,11 @@
   "extends": ["config:recommended"],
   "semanticCommits": "disabled",
   "rebaseWhen": "behind-base-branch",
+  "automerge": true,
+  "automergeType": "pr",
+  "automergeStrategy": "rebase",
+  "platformAutomerge": false,
+  "ignoreTests": false,
   "commitMessageAction": "update",
   "commitBody": "{{#if (equals updateType 'digest')}}Upstream rebuilt the tag, so the pinned digest is stale.{{else}}Upstream published a newer release.{{/if}}\n\nDeveloped-by: Aryan Ameri <github@aryan.ameri.coffee>\nAssisted-by: <Renovate:renovate-{{{renovateVersion}}}>",
   "customManagers": [
