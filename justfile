@@ -8,6 +8,9 @@ IMAGE := "localhost/baikal:dev"
 ARCHIVE := env_var_or_default("ARCHIVE", "/tmp/baikal-image.tar")
 LAYOUT := ARCHIVE + ".layout"
 REPORT := ARCHIVE + ".report.json"
+SARIF := ARCHIVE + ".sarif"
+PUBLISHED := env_var_or_default("PUBLISHED", "ghcr.io/aryonoco/baikal:latest")
+BASELINE := ARCHIVE + ".published.json"
 
 # Tool versions live in mise.toml
 
@@ -36,14 +39,10 @@ test: build acceptance
 archive:
     {{ ENGINE }} image save -o {{ ARCHIVE }} {{ IMAGE }}
 
-# Fail on any HIGH or CRITICAL vulnerability
+# Fail on any HIGH or CRITICAL vulnerability the published image does not have
 scan:
     rm -rf {{ LAYOUT }} && mkdir {{ LAYOUT }} && tar xf {{ ARCHIVE }} -C {{ LAYOUT }}
-    trivy image --input {{ LAYOUT }} --vex baikal.openvex.json \
-      --severity HIGH,CRITICAL --format json --output {{ REPORT }}
-    jq -e '(([.Results[]? | .Packages // [] | length] | add) // 0) > 0' {{ REPORT }} > /dev/null \
-      || { echo 'no packages in {{ ARCHIVE }}: the scan found nothing to scan, not nothing wrong' >&2; exit 1; }
-    trivy convert --scanners vuln --format table --exit-code 1 {{ REPORT }}
+    ./test/scan.sh {{ LAYOUT }} {{ REPORT }} {{ PUBLISHED }} {{ BASELINE }} {{ SARIF }}
 
 # Verify every action is a SHA
 actions-check:

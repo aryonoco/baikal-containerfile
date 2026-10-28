@@ -96,7 +96,8 @@ breaking change.
   version for it to match — which makes the builder-digest PR the only way
   their fixes reach the image. CI's daily run exists to catch
   upstream breakage early — a release URL that moved, a builder that changed
-  behaviour — and deliberately does not publish
+  behaviour — and deliberately does not publish. A new advisory against what
+  is already shipped surfaces there as a code scanning alert, not a red run
 - **Every root of the FrankenPHP binary is pinned in the Containerfile**, not
   resolved at build time. Left alone, `build-static.sh` asks php.net for the
   newest PHP 8.5 and xcaddy asks the Go proxy for the newest Caddy and
@@ -134,7 +135,9 @@ breaking change.
 - `just test` — build, then run the acceptance suite against it
 - `just lint` — pinact, zizmor, hadolint, `docker build --check`, ShellCheck,
   `reuse lint` and PHPStan
-- `just scan` — Trivy over the image archive `just archive` writes
+- `just scan` — Trivy over the image archive `just archive` writes and over
+  the published `:latest`, failing only on what the archive would add. Needs
+  network access to ghcr.io
 - `just actions-pin`, `just actions-update` — move the workflow's action pins
 - `just ci` — every gate, locally. Run this before committing
 
@@ -197,10 +200,21 @@ breaking change.
 - All linter gates are enforced as errors — fix them, don't suppress them. Any
   suppression, anywhere, needs an explicit, comment-level justification beside
   it to be accepted
+- **The scan blocks only what a change would add.** `test/scan.sh` scans the
+  candidate and the published `:latest` for the same arch from one Trivy
+  database, and fails only on a HIGH or CRITICAL finding, the same
+  vulnerability in the same package, that the published image lacks. No
+  release can make an advisory against something already shipped any worse,
+  so blocking on one only holds back whatever else the release fixes. It is
+  reported instead: on the run's summary page and, from main and the daily
+  run, as a code scanning alert. With nothing published, every finding counts
+  as new; a registry that cannot be reached fails the scan rather than
+  waving it through
 - **`baikal.openvex.json` is a reachability claim, not a suppression list.** Each
   statement names one advisory and the exact component version it was argued
   against, so a FrankenPHP bump that moves that component makes the finding
-  reappear. Re-argue it then;
+  reappear, and as new, since the published image still matches the
+  statement. Re-argue it then;
   widening a statement to cover the new version without doing so is a lie the
   scanner cannot catch
 - REUSE-compliant SPDX headers on every file; licence is **BSD-2-Clause**
