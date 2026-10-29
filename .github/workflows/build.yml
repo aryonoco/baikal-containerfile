@@ -269,8 +269,9 @@ jobs:
     # The slot and the button each read :latest and then replace it. One at a
     # time, or each could decide against an image the other is replacing.
     # Queued rather than the default single pending slot, so a second
-    # publish waiting never cancels the first, and neither does a skipped
-    # publish job from a pull request or a push, should GitHub count those.
+    # publish waiting never cancels the first. The skipped publish job every
+    # pull request and push run carries never joins the group, as
+    # renovate.yml's skipped runs showed on 2026-10-29.
     concurrency:
       group: publish
       cancel-in-progress: false
