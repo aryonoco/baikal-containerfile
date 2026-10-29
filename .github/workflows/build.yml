@@ -12,20 +12,26 @@ on:
   pull_request:
   schedule:
     #
-    # Check to see if something outside this repository has changed:
+    # The daily slot, and the only automatic publish: it publishes main when
+    # main moved since the commit the published :latest was built from, so
+    # users see at most one new image a day however many merges land. It
+    # also checks whether something outside this repository has changed:
     # the Baikal release URL or its checksum, the FrankenPHP static
-    # builder's behaviour, the runner images, or the vulnerability
-    # database the scan reads. Every morning, so a new advisory against
-    # the pinned image reaches code scanning within a day rather than a week.
+    # builder's behaviour, the runner images, or the vulnerability database
+    # the scan reads, so a new advisory against the pinned image reaches
+    # code scanning within a day rather than a week.
     # 18:17 UTC is 05:17 in Melbourne under daylight saving, 04:17 outside it.
     - cron: '17 18 * * *'
+  # The button: run from main, it publishes now, for an urgent fix.
   workflow_dispatch:
 
 permissions: {}
 
-# Two pushes to main landing close together would race to write :latest.
+# GitHub keeps one pending run per group, and a newer one replaces it. The
+# event in the group stops a push run, frequent now that Renovate merges on
+# its own, from replacing a pending slot or button run.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -256,10 +262,19 @@ jobs:
   publish:
     name: publish
     needs: [lint, test, scan]
-    # Pushes from main only
+    # The daily slot and the button, from main only. A push never publishes.
     if: >-
       github.ref == 'refs/heads/main'
-      && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    # The slot and the button each read :latest and then replace it. One at a
+    # time, or each could decide against an image the other is replacing.
+    # Queued rather than the default single pending slot, so a second
+    # publish waiting never cancels the first, and neither does a skipped
+    # publish job from a pull request or a push, should GitHub count those.
+    concurrency:
+      group: publish
+      cancel-in-progress: false
+      queue: max
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     permissions:
@@ -268,17 +283,34 @@ jobs:
       id-token: write # Sigstore signs against the runner's OIDC identity
       attestations: write # actions/attest writes the provenance
     steps:
+      # Full history, so the decision below can tell a newer commit from an
+      # older one
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
 
       # For jq
       - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
 
-      # For `imagetools create`
+      # For `imagetools inspect` and `imagetools create`
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # Publish, skip or fail. The slot skips when main has not moved since
+      # the published image, and :latest never moves backwards: after a
+      # Baikal release, an older image refuses a /data the newer one migrated.
+      - name: Decide whether to publish
+        id: decide
+        run: |
+          # actions/checkout points origin/main at the commit this run built,
+          # not at main's tip, so a newer published commit would read as one
+          # that is not on main. The repository is public; no credentials.
+          git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
+          published=$(test/published-revision.sh ghcr.io/aryonoco/baikal:latest)
+          test/publish-decision.sh "${GITHUB_EVENT_NAME}" "${GITHUB_SHA}" "${published}"
+
       - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        if: steps.decide.outputs.publish == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
@@ -286,10 +318,12 @@ jobs:
 
       # Each artifact lands in its own directory under this path
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: steps.decide.outputs.publish == 'true'
         with:
           pattern: image-*
           path: /tmp/images
       - name: Read the Baikal version from the Containerfile
+        if: steps.decide.outputs.publish == 'true'
         id: version
         run: |
           v=$(grep -oP '^ARG BAIKAL_VERSION=\K.*' Containerfile)
@@ -299,6 +333,7 @@ jobs:
           fi
           echo "baikal=${v}" >> "${GITHUB_OUTPUT}"
       - name: Push each tested architecture
+        if: steps.decide.outputs.publish == 'true'
         env:
           VERSION: ${{ steps.version.outputs.baikal }}
         run: |
@@ -310,6 +345,7 @@ jobs:
               "docker://ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
           done
       - name: Merge the architectures into one index
+        if: steps.decide.outputs.publish == 'true'
         id: merge
         env:
           VERSION: ${{ steps.version.outputs.baikal }}
@@ -330,6 +366,7 @@ jobs:
       # out of this repository's workflow, signed against the runner's OIDC
       # identity
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: steps.decide.outputs.publish == 'true'
         with:
           subject-name: ghcr.io/aryonoco/baikal
           subject-digest: ${{ steps.merge.outputs.digest }}
