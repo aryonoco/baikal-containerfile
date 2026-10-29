@@ -11,8 +11,13 @@ PUBLISHED="${3?commit the published image was built from, empty if none}"
 # when main moved since the published image, and the button publishes even
 # when it has not. Neither ever moves :latest backwards: after a Baikal
 # release, an older image refuses every /data the newer one has migrated.
+# A refusal goes to the run's summary page as well as the log, where a skip
+# or a publish already says why, so a red slot says why in the same place.
 fail() {
     echo "${1}" >&2
+    if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+        echo "fail: ${1}" >>"${GITHUB_STEP_SUMMARY}"
+    fi
     exit 1
 }
 

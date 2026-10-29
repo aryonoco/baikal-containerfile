@@ -60,7 +60,9 @@ jobs:
     # On the job rather than the workflow. GitHub keeps one pending run per
     # group and a newer one replaces it, so a run the `if` above skips (the
     # App's own dashboard edit, every run) would otherwise take that slot and
-    # cancel a useful run waiting in it. A skipped job never joins the group.
+    # cancel a useful run waiting in it. A skipped job never joins the group:
+    # on 2026-10-29 the run a dashboard edit started was skipped while a
+    # workflow_run run waited here, and that run went ahead uncancelled.
     concurrency:
       group: renovate
       cancel-in-progress: false

@@ -87,7 +87,8 @@ breaking change.
   That obligation moves to the base image's own rebuilds — and **nothing in
   this repository collects them on its own.** Rebuilding an unchanged
   Containerfile does not pick them up. **Renovate is the update path**: it runs
-  every morning and after every merge to main, from
+  every morning, after every merge to main and whenever CI finishes on one
+  of its branches, from
   `.github/workflows/renovate.yml`, as a GitHub App installed on this
   repository alone (setup in the README). After a merge it rebases every
   open PR left behind main, since GitHub re-runs no checks when a base moves
