@@ -16,7 +16,7 @@ on:
     # the Baikal release URL or its checksum, the FrankenPHP static
     # builder's behaviour, the runner images, or the vulnerability
     # database the scan reads. Every morning, so a new advisory against
-    # the pinned image turns this red within a day rather than a week.
+    # the pinned image reaches code scanning within a day rather than a week.
     # 18:17 UTC is 05:17 in Melbourne under daylight saving, 04:17 outside it.
     - cron: '17 18 * * *'
   workflow_dispatch:
@@ -220,6 +220,7 @@ jobs:
     timeout-minutes: 20
     permissions:
       contents: read
+      security-events: write # upload the findings to code scanning, from main only
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -233,10 +234,24 @@ jobs:
           name: image-${{ matrix.arch }}
           path: /tmp
 
+      # Fails only on what the published image does not already have. Every
+      # finding, blocking or not, lands on the run's summary page.
       - name: Vulnerability scan
         env:
           ARCHIVE: /tmp/image.tar
         run: just scan
+
+      # Main's findings as code scanning alerts, which close by themselves once
+      # a later scan stops finding them. Even when the scan failed, so a finding
+      # that reached main is on record. Never from a pull request: GitHub would
+      # then add its own check comparing the PR with main, a second gate
+      # measured against something other than what is published.
+      - name: Upload the findings to code scanning
+        if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: /tmp/image.tar.sarif
+          category: trivy-${{ matrix.arch }}
 
   publish:
     name: publish
