@@ -8,7 +8,7 @@ ARG BUILDER_IMAGE=dunglas/frankenphp:static-builder-gnu@sha256:62697a76958ff5719
 # php.net and xcaddy the newest Caddy and plugins, so two builds of one commit
 # ship different binaries. test/pinned-versions.sh checks the binary agrees.
 ARG PHP_VERSION=8.5.12
-ARG CADDY_VERSION=v2.11.7
+ARG CADDY_VERSION=v2.11.8
 ARG CBROTLI_VERSION=v1.0.1
 ARG MERCURE_VERSION=v1.1.5
 ARG VULCAIN_VERSION=v1.4.5
