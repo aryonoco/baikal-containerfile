@@ -3,7 +3,7 @@
 
 # Only the twenty extensions which Baikal needs are included.
 ARG PHP_EXTENSIONS="dom,pdo,pdo_sqlite,sqlite3,zlib,mbstring,mbregex,iconv,session,xml,xmlreader,xmlwriter,simplexml,filter,tokenizer,ctype,pcntl,posix,opcache,openssl"
-ARG BUILDER_IMAGE=dunglas/frankenphp:static-builder-gnu@sha256:4990275fc30f6bc43b6387244abc07376d2b40e1b73f4be39938dc5bfde2f5df
+ARG BUILDER_IMAGE=dunglas/frankenphp:static-builder-gnu@sha256:fde6293898f3707dff309406d90d6bf323684e099699537b93de1f596a0935be
 # The binary's own roots. Unset, build-static.sh takes the newest PHP 8.5 from
 # php.net and xcaddy the newest Caddy and plugins, so two builds of one commit
 # ship different binaries. test/pinned-versions.sh checks the binary agrees.
