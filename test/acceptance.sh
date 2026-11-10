@@ -24,10 +24,11 @@ UPGRADE_VOL=baikal-acceptance-upgrade
 SHAREE=bob
 SHAREE_PASS=builder
 
-# The image this repository first published, Baikal 0.12.1, pinned by digest
-# so it can never move. Upstream's upgrade is cumulative, so a volume it made
-# runs through every migration Baikal has added since, on every release.
-PREVIOUS_IMAGE=ghcr.io/aryonoco/baikal@sha256:123c2b94d5855c758f2b0840a910491f23210c90622351cae03f5fb527a33b65
+# The last Baikal 0.12.1 image published before the move to divbast, copied
+# into divbast/baikal byte-for-byte and pinned by digest so it can never move.
+# Upstream's upgrade is cumulative, so a volume it made runs through every
+# migration Baikal has added since, on every release.
+PREVIOUS_IMAGE=ghcr.io/divbast/baikal@sha256:62ef30cda439a70d457e82126ba4c15b036fdde33937fc20d17f5533af79a466
 
 CONFINE=(--cap-drop ALL --read-only --user 65532:65532 --tmpfs /tmp)
 
