@@ -345,6 +345,9 @@ jobs:
               "oci-archive:/tmp/images/image-${arch}/image.tar" \
               "docker://ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
           done
+      # The description is what GHCR shows on the package page. This is the
+      # last image published under this name: the repository is moving to
+      # divbast, and this name stops receiving updates.
       - name: Merge the architectures into one index
         if: steps.decide.outputs.publish == 'true'
         id: merge
@@ -357,6 +360,7 @@ jobs:
             --annotation "index:org.opencontainers.image.version=${VERSION}" \
             --annotation "index:org.opencontainers.image.revision=${GITHUB_SHA}" \
             --annotation "index:org.opencontainers.image.created=${created}" \
+            --annotation "index:org.opencontainers.image.description=Frozen. Moved to ghcr.io/divbast/baikal" \
             -t "ghcr.io/aryonoco/baikal:${VERSION}" \
             -t "ghcr.io/aryonoco/baikal:latest" \
             "ghcr.io/aryonoco/baikal@$(cat /tmp/digest-amd64)" \
