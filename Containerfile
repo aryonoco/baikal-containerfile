@@ -27,10 +27,14 @@ ARG MERCURE_VERSION
 ARG VULCAIN_VERSION
 WORKDIR /go/src/app
 # glibc
+# The plugins go through XCADDY_ARGS, which build-static.sh writes into
+# craft.yml. spc applies craft.yml's extra-env over the environment, so
+# SPC_CMD_VAR_FRANKENPHP_XCADDY_MODULES set here would lose to its unversioned
+# default and xcaddy would fetch the newest release of every plugin.
 RUN PHP_EXTENSIONS="${PHP_EXTENSIONS}" \
     PHP_VERSION="${PHP_VERSION}" \
     CADDY_VERSION="${CADDY_VERSION}" \
-    SPC_CMD_VAR_FRANKENPHP_XCADDY_MODULES="--with github.com/dunglas/caddy-cbrotli@${CBROTLI_VERSION} --with github.com/dunglas/mercure/caddy@${MERCURE_VERSION} --with github.com/dunglas/vulcain/caddy@${VULCAIN_VERSION}" \
+    XCADDY_ARGS="--with github.com/dunglas/caddy-cbrotli@${CBROTLI_VERSION} --with github.com/dunglas/mercure/caddy@${MERCURE_VERSION} --with github.com/dunglas/vulcain/caddy@${VULCAIN_VERSION}" \
     ./build-static.sh
 RUN cp "$(ls /go/src/app/dist/frankenphp-linux-*)" /go/src/app/dist/frankenphp
 COPY test/pinned-versions.sh /tmp/pinned-versions.sh
