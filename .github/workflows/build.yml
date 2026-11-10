@@ -329,7 +329,7 @@ jobs:
           # not at main's tip, so a newer published commit would read as one
           # that is not on main. The repository is public; no credentials.
           git fetch --no-tags --quiet origin +refs/heads/main:refs/remotes/origin/main
-          published=$(test/published-revision.sh ghcr.io/aryonoco/baikal:latest)
+          published=$(test/published-revision.sh ghcr.io/divbast/baikal:latest)
           test/publish-decision.sh "${GITHUB_EVENT_NAME}" "${GITHUB_SHA}" "${published}"
 
       - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
@@ -365,11 +365,9 @@ jobs:
               --digestfile "/tmp/digest-${arch}" \
               --dest-authfile "${HOME}/.docker/config.json" \
               "oci-archive:/tmp/images/image-${arch}/image.tar" \
-              "docker://ghcr.io/aryonoco/baikal:${VERSION}-${arch}"
+              "docker://ghcr.io/divbast/baikal:${VERSION}-${arch}"
           done
-      # The description is what GHCR shows on the package page. This is the
-      # last image published under this name: the repository is moving to
-      # divbast, and this name stops receiving updates.
+      # The description is what GHCR shows on the package page.
       - name: Merge the architectures into one index
         if: steps.decide.outputs.publish == 'true'
         id: merge
@@ -382,11 +380,11 @@ jobs:
             --annotation "index:org.opencontainers.image.version=${VERSION}" \
             --annotation "index:org.opencontainers.image.revision=${GITHUB_SHA}" \
             --annotation "index:org.opencontainers.image.created=${created}" \
-            --annotation "index:org.opencontainers.image.description=Frozen. Moved to ghcr.io/divbast/baikal" \
-            -t "ghcr.io/aryonoco/baikal:${VERSION}" \
-            -t "ghcr.io/aryonoco/baikal:latest" \
-            "ghcr.io/aryonoco/baikal@$(cat /tmp/digest-amd64)" \
-            "ghcr.io/aryonoco/baikal@$(cat /tmp/digest-arm64)"
+            --annotation "index:org.opencontainers.image.description=Baikal CalDAV/CardDAV server. Zero capabilities, read-only root, non-root, no shell" \
+            -t "ghcr.io/divbast/baikal:${VERSION}" \
+            -t "ghcr.io/divbast/baikal:latest" \
+            "ghcr.io/divbast/baikal@$(cat /tmp/digest-amd64)" \
+            "ghcr.io/divbast/baikal@$(cat /tmp/digest-arm64)"
           digest=$(jq -er '."containerimage.descriptor".digest' /tmp/index.json)
           echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
       # BuildKit's is about what went into the image. This says the image came
@@ -395,7 +393,7 @@ jobs:
       - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         if: steps.decide.outputs.publish == 'true'
         with:
-          subject-name: ghcr.io/aryonoco/baikal
+          subject-name: ghcr.io/divbast/baikal
           subject-digest: ${{ steps.merge.outputs.digest }}
           push-to-registry: true
           create-storage-record: false

@@ -11,7 +11,7 @@ CHECK="${1:?which check: open, stuck, renovate or slots}"
 # Finds the ways the update machine stops without anything failing loudly.
 # Each check prints what it found and exits 1 if it found anything, so
 # .github/workflows/stall.yml goes red and GitHub emails someone.
-AUTHOR=app/aryonoco-baikal-renovate
+AUTHOR=app/divbast-renovate
 
 found() {
     echo "${1}"

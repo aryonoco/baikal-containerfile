@@ -39,7 +39,7 @@ jobs:
       STUCK_HOURS: 24
       RUN_HOURS: 24
       LOST_SLOTS: 2
-      PUBLISHED: ghcr.io/aryonoco/baikal:latest
+      PUBLISHED: ghcr.io/divbast/baikal:latest
     # Every step runs whatever the one before found, so one run names every
     # stall.
     steps:

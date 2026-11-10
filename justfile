@@ -9,7 +9,7 @@ ARCHIVE := env_var_or_default("ARCHIVE", "/tmp/baikal-image.tar")
 LAYOUT := ARCHIVE + ".layout"
 REPORT := ARCHIVE + ".report.json"
 SARIF := ARCHIVE + ".sarif"
-PUBLISHED := env_var_or_default("PUBLISHED", "ghcr.io/aryonoco/baikal:latest")
+PUBLISHED := env_var_or_default("PUBLISHED", "ghcr.io/divbast/baikal:latest")
 BASELINE := ARCHIVE + ".published.json"
 
 # Tool versions live in mise.toml
