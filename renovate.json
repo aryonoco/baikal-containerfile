@@ -110,6 +110,13 @@
       "extractVersion": "^jq-(?<version>.+)"
     },
     {
+      "description": "trivy is looked up on Docker Hub, not GitHub. The aquasecurity org has an IP allow list, and GitHub enforces it on API reads by an App installed on an organisation, as divbast-renovate is, so every github-tags or github-releases lookup is refused and the 403 surfaces only as no-result. mise still installs from the release download, which the allow list does not cover. aquasec/trivy is pushed by the same GoReleaser run that publishes those binaries, tagged with the same bare version. Docker versioning keeps latest, canary and the older per-architecture tags such as 0.71.2-amd64 out of the candidates.",
+      "matchDepNames": ["aqua:aquasecurity/trivy"],
+      "overrideDatasource": "docker",
+      "overridePackageName": "aquasec/trivy",
+      "versioning": "docker"
+    },
+    {
       "matchDepNames": ["sabre-io/Baikal"],
       "labels": ["baikal"]
     },
