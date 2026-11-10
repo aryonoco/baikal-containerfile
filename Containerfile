@@ -38,13 +38,18 @@ ARG SPC_COMMIT
 # its hash, and composer installs from that commit's own lock file.
 # build-static.sh skips its nightly download when dist/spc is executable, so
 # the wrapper there runs this checkout instead, and records each subcommand
-# for test/pinned-spc.sh.
+# for test/pinned-spc.sh. Both downloads get three retries, 10s, 30s and 90s
+# apart, so one dropped connection does not cost the daily slot.
 RUN set -eux; \
+    retry() { \
+        for delay in 10 30 90; do "$@" && return 0; sleep "${delay}"; done; \
+        "$@"; \
+    }; \
     git init -q /opt/static-php-cli; \
-    git -C /opt/static-php-cli fetch -q --depth 1 \
+    retry git -C /opt/static-php-cli fetch -q --depth 1 \
         https://github.com/crazywhalecc/static-php-cli.git "${SPC_COMMIT}"; \
     git -C /opt/static-php-cli checkout -q --detach FETCH_HEAD; \
-    composer install --working-dir=/opt/static-php-cli \
+    retry composer install --working-dir=/opt/static-php-cli \
         --no-dev --no-interaction --prefer-dist; \
     mkdir -p /go/src/app/dist; \
     printf '%s\n' '#!/bin/sh' \
