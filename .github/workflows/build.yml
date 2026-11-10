@@ -83,8 +83,9 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Pin the build clock to the commit
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "${GITHUB_ENV}"
+      # Never for the two events that publish, which build from scratch.
       - name: Cache the build layers
-        if: github.event_name != 'schedule'
+        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/.buildx-cache
@@ -109,10 +110,15 @@ jobs:
             --output type=oci,dest=/tmp/image.tar,rewrite-timestamp=true
             -f Containerfile -t "${image}"
           )
-          if [ "${GITHUB_EVENT_NAME}" = schedule ]; then
-            # The canary run. These two stages are the only ones that reach
-            # outside this repository, so a cache hit on either means the
-            # daily build tested nothing upstream.
+          if [ "${GITHUB_EVENT_NAME}" = schedule ] ||
+            [ "${GITHUB_EVENT_NAME}" = workflow_dispatch ]; then
+            # The daily slot and the button, the two runs that publish. These
+            # two stages are the only ones that reach outside this repository,
+            # so a cache hit on either means the daily build tested nothing
+            # upstream, and a publish would ship whatever a push or pull
+            # request last built: spc takes openssl and the other libraries
+            # at their newest release when the stage runs, so that can be
+            # older than what :latest already carries.
             args+=(--no-cache-filter frankenphp-build --no-cache-filter fetch)
           else
             # reset=true replaces the export rather than appending to it, which
