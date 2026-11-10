@@ -3,6 +3,14 @@
 {
 	# container speaks plain HTTP over a trusted network. 
 	auto_https off
+
+	# No listener beyond the contract's 8080 and 8081, and nothing that can
+	# reconfigure the running server. The admin API otherwise binds an
+	# unauthenticated endpoint on 127.0.0.1:2019, which any process on the
+	# host can reach under --network host. Nothing here needs it:
+	# `frankenphp run --config` loads this file directly.
+	admin off
+
 	frankenphp
 	log {
 		output stdout

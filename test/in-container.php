@@ -17,6 +17,19 @@ declare(strict_types=1);
 
 const LOOPBACK_ORIGIN = 'http://127.0.0.1:8080';
 
+/** The contract's listeners: DAV, then health. Nothing else may listen. */
+const CONTRACT_PORTS = [8080, 8081];
+const TCP_LISTEN_STATE = '0A';
+
+/**
+ * Docker's embedded DNS resolver: 127.0.0.11 as /proc/net/tcp prints it
+ * (little-endian). The engine runs it inside the container's network
+ * namespace, on a random port, only on user-defined networks, and the
+ * acceptance suite uses one. It is not the image's listener, and it is absent
+ * under --network host, which is the case the check protects.
+ */
+const ENGINE_DNS_ADDRESS = '0B00007F';
+
 /**
  * The ones most likely to be the target of an intrusion.
  */
@@ -285,6 +298,53 @@ function assertNoShell(): void
             $present ? 'present' : 'absent',
         );
     }
+}
+
+/**
+ * Ports in LISTEN state in one /proc/net/tcp{,6} table, on any address.
+ *
+ * @return list<int>
+ */
+function listeningPorts(string $table): array
+{
+    $ports = [];
+
+    foreach (explode("\n", readOrThrow($table)) as $line) {
+        // sl local_address rem_address st ...; the header line never matches
+        $pattern = '/^\s*\d+:\s+([0-9A-Fa-f]+):([0-9A-Fa-f]{4})\s+[0-9A-Fa-f]+:[0-9A-Fa-f]{4}\s+([0-9A-Fa-f]{2})\s/';
+        if (preg_match($pattern, $line, $matches) !== 1 || strtoupper($matches[3]) !== TCP_LISTEN_STATE) {
+            continue;
+        }
+        if (strtoupper($matches[1]) === ENGINE_DNS_ADDRESS) {
+            continue;
+        }
+        $ports[] = (int) hexdec($matches[2]);
+    }
+
+    return $ports;
+}
+
+/**
+ * Loopback counts: under --network host a listener on 127.0.0.1 is reachable
+ * by every process on the host. Caddy's admin API, on 127.0.0.1:2019 unless
+ * switched off, was exactly that.
+ */
+function assertListeners(): void
+{
+    $found = array_values(array_unique(array_merge(
+        listeningPorts('/proc/net/tcp'),
+        listeningPorts('/proc/net/tcp6'),
+    )));
+    sort($found);
+
+    $expected = CONTRACT_PORTS;
+    sort($expected);
+
+    Assertions::equals(
+        'listening TCP ports are exactly the contract\'s',
+        implode(' ', $expected),
+        implode(' ', $found),
+    );
 }
 
 /**
@@ -659,6 +719,7 @@ function commands(): array
         'assert-pid1' => ['arguments' => [], 'handler' => assertPid1(...)],
         'assert-caps' => ['arguments' => [], 'handler' => assertCaps(...)],
         'assert-no-shell' => ['arguments' => [], 'handler' => assertNoShell(...)],
+        'assert-listeners' => ['arguments' => [], 'handler' => assertListeners(...)],
         'probe-egress' => ['arguments' => [], 'handler' => probeEgress(...)],
         'probe-loopback' => ['arguments' => ['username', 'password'], 'handler' => probeLoopback(...)],
         'wait-serving' => ['arguments' => ['seconds'], 'handler' => waitServing(...)],

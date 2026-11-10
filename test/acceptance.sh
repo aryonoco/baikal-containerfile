@@ -205,6 +205,11 @@ echo '== 6. process capability sets are all zero'
 # The raw /proc/self/status line carries the labels CapEff/CapPrm
 probe baikal-acc assert-caps
 
+echo '== 6b. only the contract'"'"'s ports listen'
+# 8080 and 8081, loopback included: under --network host a 127.0.0.1
+# listener is reachable by every process on the host
+probe baikal-acc assert-listeners
+
 echo '== 7. DAV actually works'
 probe baikal-acc seed-user "${DAV_USER}" "${DAV_PASS}"
 
