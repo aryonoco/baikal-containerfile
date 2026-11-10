@@ -111,20 +111,29 @@ breaking change.
   is already shipped surfaces there as a code scanning alert, not a red run.
   `.github/workflows/stall.yml` fails each day that updates have stopped
   flowing: a Renovate PR stuck, Renovate silent, or two slots lost in a row
-- **Every root of the FrankenPHP binary is pinned in the Containerfile**, not
+- **PHP, Caddy, its plugins and spc are pinned in the Containerfile**, not
   resolved at build time. Left alone, `build-static.sh` asks php.net for the
   newest PHP 8.5 and xcaddy asks the Go proxy for the newest Caddy and
   plugins, so two builds of one commit shipped different binaries.
   `PHP_VERSION`, `CADDY_VERSION` and the three plugin ARGs fix them; Renovate
-  moves the builder digest, Caddy and the plugins together as one `frankenphp`
-  group; and `test/pinned-versions.sh` fails the build if the binary's own
-  build info disagrees with any pin, because minimum version selection lifts a
-  module above its pin without a word. **One input is still not pinned:**
-  `build-static.sh` downloads a nightly `spc` from dl.static-php.dev on every
-  build, with no checksum, over the copy the builder image ships. spc decides
-  how PHP and its libraries are fetched and built, so that download is the
-  build's remaining moving part, and an unverified binary run in the stage
-  that produces the published one
+  moves the builder digest, Caddy and the plugins together as one
+  `frankenphp` group; and `test/pinned-versions.sh` fails the build if the
+  binary's own build info disagrees with any pin, because minimum version
+  selection lifts a module above its pin without a word. **spc is pinned by
+  commit.** Left alone, `build-static.sh` downloads a nightly `spc` from
+  dl.static-php.dev on every build, with no checksum, and spc decides how PHP
+  and its libraries are fetched and built. The stage instead fetches
+  static-php-cli at `SPC_COMMIT`, installs it from that commit's own lock file
+  and puts a wrapper at `dist/spc`, which `build-static.sh` runs in place of
+  the download; `test/pinned-spc.sh` fails the build if anything else ran
+  `spc craft`. Its v3 branch has no tags, so Renovate follows the branch head
+  by digest, in a PR of its own and at most once a day: the branch moves up
+  to 13 times a day, and its schedule in `renovate.json` holds the daily run.
+  A builder that needs a newer spc goes red until that PR lands. **What spc
+  downloads is still chosen at build time:** several
+  libraries, openssl and zlib among them, come from the newest GitHub release
+  that matches, so the pin fixes how the binary is built but not every
+  source that goes into it
 - **The binary must never carry a file capability.** The official FrankenPHP build
   carries `cap_net_bind_service=ep`, and a binary with a file capability cannot be
   exec'd at all under `--cap-drop ALL` — it dies with `Operation not permitted`
@@ -160,7 +169,7 @@ breaking change.
   reuse, just, jq, pinact, trivy and zizmor are all listed there. Every justfile
   recipe runs through `mise exec`, so a recipe resolves those binaries and not a
   same-named one on PATH. `gh` is the exception, and only as a local fallback
-  for the API token pinact and zizmor need; CI passes its own
+  for the API token pinact, zizmor and spc's build need; CI passes its own
 - **`just lint` needs a running Docker daemon**, for `docker build --check`.
   `--check` is a buildx flag with no podman equivalent, so this one gate does
   not honour `ENGINE` and does not run without dockerd

@@ -83,8 +83,9 @@ jobs:
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Pin the build clock to the commit
         run: echo "SOURCE_DATE_EPOCH=$(git log -1 --pretty=%ct)" >> "${GITHUB_ENV}"
+      # Never for the two events that publish, which build from scratch.
       - name: Cache the build layers
-        if: github.event_name != 'schedule'
+        if: github.event_name != 'schedule' && github.event_name != 'workflow_dispatch'
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/.buildx-cache
@@ -95,18 +96,29 @@ jobs:
 
       # An OCI layout is used to enable attestations
       - name: Build the image
+        env:
+          # Read-only, for spc's calls to the GitHub API, which fail the
+          # build once the runner's unauthenticated rate limit runs out. It
+          # reaches build-static.sh as a secret, never a build argument.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           image=$(just --evaluate IMAGE)
           args=(
             --attest type=provenance,mode=max
             --attest type=sbom
+            --secret id=github_token,env=GITHUB_TOKEN
             --output type=oci,dest=/tmp/image.tar,rewrite-timestamp=true
             -f Containerfile -t "${image}"
           )
-          if [ "${GITHUB_EVENT_NAME}" = schedule ]; then
-            # The canary run. These two stages are the only ones that reach
-            # outside this repository, so a cache hit on either means the
-            # daily build tested nothing upstream.
+          if [ "${GITHUB_EVENT_NAME}" = schedule ] ||
+            [ "${GITHUB_EVENT_NAME}" = workflow_dispatch ]; then
+            # The daily slot and the button, the two runs that publish. These
+            # two stages are the only ones that reach outside this repository,
+            # so a cache hit on either means the daily build tested nothing
+            # upstream, and a publish would ship whatever a push or pull
+            # request last built: spc takes openssl and the other libraries
+            # at their newest release when the stage runs, so that can be
+            # older than what :latest already carries.
             args+=(--no-cache-filter frankenphp-build --no-cache-filter fetch)
           else
             # reset=true replaces the export rather than appending to it, which
@@ -118,6 +130,13 @@ jobs:
             )
           fi
           docker buildx build "${args[@]}" .
+
+      # Every blob in the archive, attestations included. The provenance
+      # records each build argument, so a token passed as one shows here.
+      - name: Check the image for the token
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: test/token-leak.sh /tmp/image.tar
 
       - name: Publish the image as an artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

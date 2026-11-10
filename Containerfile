@@ -12,6 +12,10 @@ ARG CADDY_VERSION=v2.11.9
 ARG CBROTLI_VERSION=v1.0.1
 ARG MERCURE_VERSION=v1.1.6
 ARG VULCAIN_VERSION=v1.4.6
+# static-php-cli, which build-static.sh would otherwise download as an
+# unchecked nightly binary on every build. Its v3 branch has no tags, so
+# Renovate follows the branch head by commit. test/pinned-spc.sh checks it ran.
+ARG SPC_COMMIT=ff04d4af9ba44f6c194239d733e0529cc6ddecea
 # Renovate moves these two in one PR and computes the checksum itself; its
 # regex needs them adjacent and in this order.
 ARG BAIKAL_VERSION=0.13.0
@@ -25,17 +29,60 @@ ARG CADDY_VERSION
 ARG CBROTLI_VERSION
 ARG MERCURE_VERSION
 ARG VULCAIN_VERSION
-WORKDIR /go/src/app
+ARG SPC_COMMIT
+# No WORKDIR: BuildKit stamps the directory one creates with
+# SOURCE_DATE_EPOCH, which build.yml sets to the commit time, and that gave
+# this whole stage a new cache key on every commit. Every path below is
+# absolute instead.
+# spc from source at the pinned commit: git checks a fetch by commit against
+# its hash, and composer installs from that commit's own lock file.
+# build-static.sh skips its nightly download when dist/spc is executable, so
+# the wrapper there runs this checkout instead, and records each subcommand
+# for test/pinned-spc.sh. Both downloads get three retries, 10s, 30s and 90s
+# apart, so one dropped connection does not cost the daily slot.
+RUN set -eux; \
+    retry() { \
+        for delay in 10 30 90; do "$@" && return 0; sleep "${delay}"; done; \
+        "$@"; \
+    }; \
+    git init -q /opt/static-php-cli; \
+    retry git -C /opt/static-php-cli fetch -q --depth 1 \
+        https://github.com/crazywhalecc/static-php-cli.git "${SPC_COMMIT}"; \
+    git -C /opt/static-php-cli checkout -q --detach FETCH_HEAD; \
+    retry composer install --working-dir=/opt/static-php-cli \
+        --no-dev --no-interaction --prefer-dist; \
+    mkdir -p /go/src/app/dist; \
+    printf '%s\n' '#!/bin/sh' \
+        "echo \"\$1\" >>/go/src/app/dist/spc.calls" \
+        "exec php /opt/static-php-cli/bin/spc \"\$@\"" >/go/src/app/dist/spc; \
+    chmod 0755 /go/src/app/dist/spc
 # glibc
-RUN PHP_EXTENSIONS="${PHP_EXTENSIONS}" \
+# The plugins go through XCADDY_ARGS, which build-static.sh writes into
+# craft.yml. spc applies craft.yml's extra-env over the environment, so
+# SPC_CMD_VAR_FRANKENPHP_XCADDY_MODULES set here would lose to its unversioned
+# default and xcaddy would fetch the newest release of every plugin.
+# PHP_EXTENSION_LIBS replaces craft.yml's extra libraries, whose libavif and
+# nghttp2/3 and ngtcp2 serve extensions this build leaves out and are linked
+# by nothing. watcher is FrankenPHP's file watcher; build-static.sh appends
+# brotli, which caddy-cbrotli needs, whatever this says.
+# spc asks the GitHub API which release of each library to fetch, and a call
+# refused at the unauthenticated rate limit fails the build. The token comes
+# as a secret, which no layer, history entry or cache key ever holds, as they
+# would an ARG or ENV. Without the secret GITHUB_TOKEN is empty, and spc then
+# sends no token at all.
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
+    PHP_EXTENSIONS="${PHP_EXTENSIONS}" \
+    PHP_EXTENSION_LIBS=watcher \
     PHP_VERSION="${PHP_VERSION}" \
     CADDY_VERSION="${CADDY_VERSION}" \
-    SPC_CMD_VAR_FRANKENPHP_XCADDY_MODULES="--with github.com/dunglas/caddy-cbrotli@${CBROTLI_VERSION} --with github.com/dunglas/mercure/caddy@${MERCURE_VERSION} --with github.com/dunglas/vulcain/caddy@${VULCAIN_VERSION}" \
-    ./build-static.sh
+    XCADDY_ARGS="--with github.com/dunglas/caddy-cbrotli@${CBROTLI_VERSION} --with github.com/dunglas/mercure/caddy@${MERCURE_VERSION} --with github.com/dunglas/vulcain/caddy@${VULCAIN_VERSION}" \
+    /go/src/app/build-static.sh
 RUN cp "$(ls /go/src/app/dist/frankenphp-linux-*)" /go/src/app/dist/frankenphp
 COPY test/pinned-versions.sh /tmp/pinned-versions.sh
 RUN /tmp/pinned-versions.sh /go/src/app/dist/frankenphp "${PHP_VERSION}" \
     "${CADDY_VERSION}" "${CBROTLI_VERSION}" "${MERCURE_VERSION}" "${VULCAIN_VERSION}"
+COPY test/pinned-spc.sh /tmp/pinned-spc.sh
+RUN /tmp/pinned-spc.sh /go/src/app/dist /opt/static-php-cli "${SPC_COMMIT}"
 
 FROM debian:13-slim AS fetch
 ARG BAIKAL_VERSION
