@@ -116,15 +116,21 @@ breaking change.
   newest PHP 8.5 and xcaddy asks the Go proxy for the newest Caddy and
   plugins, so two builds of one commit shipped different binaries.
   `PHP_VERSION`, `CADDY_VERSION` and the three plugin ARGs fix them; Renovate
-  moves the builder digest, Caddy and the plugins together as one `frankenphp`
-  group; and `test/pinned-versions.sh` fails the build if the binary's own
-  build info disagrees with any pin, because minimum version selection lifts a
-  module above its pin without a word. **One input is still not pinned:**
-  `build-static.sh` downloads a nightly `spc` from dl.static-php.dev on every
-  build, with no checksum, over the copy the builder image ships. spc decides
-  how PHP and its libraries are fetched and built, so that download is the
-  build's remaining moving part, and an unverified binary run in the stage
-  that produces the published one
+  moves the builder digest, Caddy, the plugins and spc together as one
+  `frankenphp` group; and `test/pinned-versions.sh` fails the build if the
+  binary's own build info disagrees with any pin, because minimum version
+  selection lifts a module above its pin without a word. **spc is pinned by
+  commit.** Left alone, `build-static.sh` downloads a nightly `spc` from
+  dl.static-php.dev on every build, with no checksum, and spc decides how PHP
+  and its libraries are fetched and built. The stage instead fetches
+  static-php-cli at `SPC_COMMIT`, installs it from that commit's own lock file
+  and puts a wrapper at `dist/spc`, which `build-static.sh` runs in place of
+  the download; `test/pinned-spc.sh` fails the build if anything else ran
+  `spc craft`. Its v3 branch has no tags, so Renovate follows the branch head
+  by digest. **What spc downloads is still chosen at build time:** several
+  libraries, openssl and zlib among them, come from the newest GitHub release
+  that matches, so the pin fixes how the binary is built but not every
+  source that goes into it
 - **The binary must never carry a file capability.** The official FrankenPHP build
   carries `cap_net_bind_service=ep`, and a binary with a file capability cannot be
   exec'd at all under `--cap-drop ALL` — it dies with `Operation not permitted`

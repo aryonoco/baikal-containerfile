@@ -59,6 +59,16 @@
       "matchStrings": ["ARG VULCAIN_VERSION=(?<currentValue>\\S+)"],
       "depNameTemplate": "github.com/dunglas/vulcain/caddy",
       "datasourceTemplate": "go"
+    },
+    {
+      "customType": "regex",
+      "description": "ARG SPC_COMMIT, the static-php-cli commit the FrankenPHP build runs in place of the nightly spc build-static.sh would download. Its v3 branch has no tags, so git-refs follows the branch head and the commit moves as a digest.",
+      "managerFilePatterns": ["/^Containerfile$/"],
+      "matchStrings": ["ARG SPC_COMMIT=(?<currentDigest>[a-f0-9]{40})"],
+      "currentValueTemplate": "v3",
+      "depNameTemplate": "crazywhalecc/static-php-cli",
+      "packageNameTemplate": "https://github.com/crazywhalecc/static-php-cli",
+      "datasourceTemplate": "git-refs"
     }
   ],
   "packageRules": [
@@ -74,18 +84,20 @@
         "github.com/caddyserver/caddy/v2",
         "github.com/dunglas/caddy-cbrotli",
         "github.com/dunglas/mercure/caddy",
-        "github.com/dunglas/vulcain/caddy"
+        "github.com/dunglas/vulcain/caddy",
+        "crazywhalecc/static-php-cli"
       ],
       "commitMessagePrefix": "build:"
     },
     {
-      "description": "One PR for the builder, Caddy and its plugins. A FrankenPHP release can require a newer Caddy or plugin, and test/pinned-versions.sh fails any build whose binary disagrees with a pin, so moving one without the others goes red.",
+      "description": "One PR for the builder, Caddy, its plugins and static-php-cli. A FrankenPHP release can require a newer Caddy or plugin, and test/pinned-versions.sh fails any build whose binary disagrees with a pin, so moving one without the others goes red. build-static.sh drives spc, so a builder can need a newer spc too.",
       "matchDepNames": [
         "dunglas/frankenphp",
         "github.com/caddyserver/caddy/v2",
         "github.com/dunglas/caddy-cbrotli",
         "github.com/dunglas/mercure/caddy",
-        "github.com/dunglas/vulcain/caddy"
+        "github.com/dunglas/vulcain/caddy",
+        "crazywhalecc/static-php-cli"
       ],
       "groupName": "frankenphp"
     },

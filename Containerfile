@@ -12,6 +12,10 @@ ARG CADDY_VERSION=v2.11.9
 ARG CBROTLI_VERSION=v1.0.1
 ARG MERCURE_VERSION=v1.1.6
 ARG VULCAIN_VERSION=v1.4.6
+# static-php-cli, which build-static.sh would otherwise download as an
+# unchecked nightly binary on every build. Its v3 branch has no tags, so
+# Renovate follows the branch head by commit. test/pinned-spc.sh checks it ran.
+ARG SPC_COMMIT=ff04d4af9ba44f6c194239d733e0529cc6ddecea
 # Renovate moves these two in one PR and computes the checksum itself; its
 # regex needs them adjacent and in this order.
 ARG BAIKAL_VERSION=0.13.0
@@ -25,7 +29,25 @@ ARG CADDY_VERSION
 ARG CBROTLI_VERSION
 ARG MERCURE_VERSION
 ARG VULCAIN_VERSION
+ARG SPC_COMMIT
 WORKDIR /go/src/app
+# spc from source at the pinned commit: git checks a fetch by commit against
+# its hash, and composer installs from that commit's own lock file.
+# build-static.sh skips its nightly download when dist/spc is executable, so
+# the wrapper there runs this checkout instead, and records each subcommand
+# for test/pinned-spc.sh.
+RUN set -eux; \
+    git init -q /opt/static-php-cli; \
+    git -C /opt/static-php-cli fetch -q --depth 1 \
+        https://github.com/crazywhalecc/static-php-cli.git "${SPC_COMMIT}"; \
+    git -C /opt/static-php-cli checkout -q --detach FETCH_HEAD; \
+    composer install --working-dir=/opt/static-php-cli \
+        --no-dev --no-interaction --prefer-dist; \
+    mkdir -p /go/src/app/dist; \
+    printf '%s\n' '#!/bin/sh' \
+        "echo \"\$1\" >>/go/src/app/dist/spc.calls" \
+        "exec php /opt/static-php-cli/bin/spc \"\$@\"" >/go/src/app/dist/spc; \
+    chmod 0755 /go/src/app/dist/spc
 # glibc
 # The plugins go through XCADDY_ARGS, which build-static.sh writes into
 # craft.yml. spc applies craft.yml's extra-env over the environment, so
@@ -51,6 +73,8 @@ RUN cp "$(ls /go/src/app/dist/frankenphp-linux-*)" /go/src/app/dist/frankenphp
 COPY test/pinned-versions.sh /tmp/pinned-versions.sh
 RUN /tmp/pinned-versions.sh /go/src/app/dist/frankenphp "${PHP_VERSION}" \
     "${CADDY_VERSION}" "${CBROTLI_VERSION}" "${MERCURE_VERSION}" "${VULCAIN_VERSION}"
+COPY test/pinned-spc.sh /tmp/pinned-spc.sh
+RUN /tmp/pinned-spc.sh /go/src/app/dist /opt/static-php-cli "${SPC_COMMIT}"
 
 FROM debian:13-slim AS fetch
 ARG BAIKAL_VERSION
