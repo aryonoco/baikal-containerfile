@@ -5,7 +5,7 @@
   "rebaseWhen": "behind-base-branch",
   "automerge": true,
   "automergeType": "pr",
-  "automergeStrategy": "rebase",
+  "automergeStrategy": "squash",
   "platformAutomerge": false,
   "ignoreTests": false,
   "commitMessageAction": "update",

@@ -1,13 +1,14 @@
 <!-- SPDX-License-Identifier: BSD-2-Clause -->
 <!-- SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee> -->
 
-# baikal-containerfile
+# baikal-oci-image
 
 A [Baikal](https://github.com/sabre-io/Baikal) CalDAV/CardDAV container image
 that runs at zero Linux capabilities on a read-only root filesystem as a
 non-root user. 
 
-Published as `ghcr.io/aryonoco/baikal`.
+Published as `ghcr.io/divbast/baikal`, from the divbast organisation, whose
+settings, rulesets and Renovate wiring live in `divbast/infra`.
 
 ## CRITICAL: Git Commit Message Format
 
@@ -25,10 +26,8 @@ Assisted-by: <NAME_OF_LLM_MODEL>
 E.g. `Assisted-by: <Claude:claude-4.6-opus>` for Claude Opus 4.6; `<Claude:claude-5-fable>`
 for Claude 5 Fable.
 
-- Sign every commit (`git commit -S`). One exception, the owner's choice
-  of a linear main: the commits Renovate merges itself with Rebase and
-  merge land on main unsigned, because GitHub cannot sign a commit it
-  rebases. Every commit a person writes stays signed
+- Sign every commit (`git commit -S`); main accepts only verified
+  signatures. Renovate's merges are squashes, which GitHub signs
 - Write commit messages as if a human wrote them, and say why, not what
 
 ## CRITICAL: No AI Attribution in Pull Requests
@@ -89,11 +88,11 @@ breaking change.
   Containerfile does not pick them up. **Renovate is the update path**: it runs
   every morning, after every merge to main and whenever CI finishes on one
   of its branches, from
-  `.github/workflows/renovate.yml`, as a GitHub App installed on this
-  repository alone (setup in the README). After a merge it rebases every
+  `.github/workflows/renovate.yml`, as the org's `divbast-renovate` App,
+  managed from `divbast/infra`. After a merge it rebases every
   open PR left behind main, since GitHub re-runs no checks when a base moves
   and a green check on a stale base proves nothing. **It merges its own
-  PRs** once every check passes, with Rebase and merge, while the repository
+  PRs** once every check passes, with a squash, while the repository
   variable `BAIKAL_AUTOMERGE` is `enabled`; any other value stops merging from
   the next run. A Baikal release arrives with
   `BAIKAL_SHA256` already computed from the release asset, and a digest bump

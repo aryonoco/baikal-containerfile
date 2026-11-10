@@ -1,11 +1,11 @@
 <!-- SPDX-License-Identifier: BSD-2-Clause -->
 <!-- SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee> -->
 
-# baikal-containerfile
+# baikal-oci-image
 
 A security hardened [Baikal](https://github.com/sabre-io/Baikal) image.
 
-Published as `ghcr.io/aryonoco/baikal`.
+Published as `ghcr.io/divbast/baikal`.
 
 ## Base
 
@@ -37,7 +37,7 @@ podman run -d --name baikal \
   -v baikal-data:/data \
   -p 8080:8080 \
   -e BAIKAL_ADMIN_PASSWORD=... \
-  ghcr.io/aryonoco/baikal:0.12.1
+  ghcr.io/divbast/baikal:0.13.0
 ```
 
 ## Health
@@ -55,7 +55,7 @@ Podman's inspection path never looks at the config's healthcheck field —
 healthcheck is in the image config; a Podman user has to pass it explicitly:
 
 ```bash
-podman run -d --health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]' ghcr.io/aryonoco/baikal:0.12.1
+podman run -d --health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]' ghcr.io/divbast/baikal:0.13.0
 ```
 
 Under a Quadlet, the equivalent is:
@@ -150,8 +150,8 @@ Every input to the image is pinned: the builder and runtime images by digest,
 Baikal by version and checksum. A pin only moves through a pull request, and
 [Renovate](https://docs.renovatebot.com/) opens those. It runs every morning,
 after every merge to `main` and whenever CI finishes on one of its branches,
-from `.github/workflows/renovate.yml` in this repository, as a GitHub App
-installed here and nowhere else, and reports on the Dependency Dashboard
+from `.github/workflows/renovate.yml` in this repository, as the divbast
+org's `divbast-renovate` GitHub App, and reports on the Dependency Dashboard
 issue. A new Baikal release arrives with its checksum already computed.
 
 Renovate merges its own pull requests once every check on one has passed,
@@ -163,8 +163,8 @@ to merge:
     gh variable set BAIKAL_AUTOMERGE --body disabled
 
 After a merge it rebases every open update the merge left behind, so each is
-tested again against the new `main` before it merges. Its merged commits land
-on `main` unsigned, because GitHub cannot sign a commit it rebases.
+tested again against the new `main` before it merges. It merges with a
+squash, which GitHub signs, because `main` accepts only signed commits.
 
 **At most one new image a day.** A merge does not publish. The daily `build`
 run publishes `main` if anything merged since the last image, so however many
@@ -177,12 +177,14 @@ you, when a Renovate pull request has been open more than 14 days or red or
 pending for more than a day, when Renovate has not succeeded in a day, or when
 two daily runs should have published and did not.
 
-A fork needs its own App:
+The App, the `renovate` environment holding its key, `BAIKAL_AUTOMERGE` and
+this repository's rulesets are all managed from
+[divbast/infra](https://github.com/divbast/infra). A fork needs its own App:
 
 1. Create a GitHub App with its webhook turned off and these repository
    permissions: Checks, Commit statuses, Contents, Issues, Pull requests and
-   Workflows read and write; Metadata read. Install it on this repository
-   only.
+   Workflows read and write; Dependabot alerts and Metadata read. Install it
+   on this repository only.
 2. Create an environment called `renovate` whose deployment branches are
    limited to `main`. Give it a variable `RENOVATE_APP_CLIENT_ID` holding the
    App's client ID, and a secret `RENOVATE_APP_PRIVATE_KEY` holding a private

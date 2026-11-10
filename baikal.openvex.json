@@ -1,8 +1,8 @@
 {
   "@context": "https://openvex.dev/ns/v0.2.0",
-  "@id": "https://github.com/aryonoco/baikal-containerfile/vex/2026-10-20",
+  "@id": "https://github.com/divbast/baikal-oci-image/vex/2026-11-10",
   "author": "Aryan Ameri <github@aryan.ameri.coffee>",
-  "timestamp": "2026-10-20T00:00:00Z",
-  "version": 2,
+  "timestamp": "2026-11-10T00:00:00Z",
+  "version": 3,
   "statements": []
 }

@@ -73,9 +73,9 @@ COPY --chown=root:root --chmod=0755 rootfs/usr/local/bin/baikal-bootstrap /usr/l
 COPY --chown=root:root rootfs/usr/local/share/baikal-health /usr/local/share/baikal-health
 COPY --chown=root:root --chmod=0755 rootfs/usr/local/bin/baikal-health /usr/local/bin/baikal-health
 
-LABEL org.opencontainers.image.source="https://github.com/aryonoco/baikal-containerfile" \
-    org.opencontainers.image.url="https://github.com/aryonoco/baikal-containerfile" \
-    org.opencontainers.image.documentation="https://github.com/aryonoco/baikal-containerfile#readme" \
+LABEL org.opencontainers.image.source="https://github.com/divbast/baikal-oci-image" \
+    org.opencontainers.image.url="https://github.com/divbast/baikal-oci-image" \
+    org.opencontainers.image.documentation="https://github.com/divbast/baikal-oci-image#readme" \
     org.opencontainers.image.title="Baikal" \
     org.opencontainers.image.description="Hardened Baikal CalDAV/CardDAV server on FrankenPHP and distroless" \
     org.opencontainers.image.licenses="BSD-2-Clause" \
