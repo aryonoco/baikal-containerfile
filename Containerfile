@@ -31,7 +31,12 @@ WORKDIR /go/src/app
 # craft.yml. spc applies craft.yml's extra-env over the environment, so
 # SPC_CMD_VAR_FRANKENPHP_XCADDY_MODULES set here would lose to its unversioned
 # default and xcaddy would fetch the newest release of every plugin.
+# PHP_EXTENSION_LIBS replaces craft.yml's extra libraries, whose libavif and
+# nghttp2/3 and ngtcp2 serve extensions this build leaves out and are linked
+# by nothing. watcher is FrankenPHP's file watcher; build-static.sh appends
+# brotli, which caddy-cbrotli needs, whatever this says.
 RUN PHP_EXTENSIONS="${PHP_EXTENSIONS}" \
+    PHP_EXTENSION_LIBS=watcher \
     PHP_VERSION="${PHP_VERSION}" \
     CADDY_VERSION="${CADDY_VERSION}" \
     XCADDY_ARGS="--with github.com/dunglas/caddy-cbrotli@${CBROTLI_VERSION} --with github.com/dunglas/mercure/caddy@${MERCURE_VERSION} --with github.com/dunglas/vulcain/caddy@${VULCAIN_VERSION}" \
