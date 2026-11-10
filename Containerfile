@@ -35,7 +35,13 @@ WORKDIR /go/src/app
 # nghttp2/3 and ngtcp2 serve extensions this build leaves out and are linked
 # by nothing. watcher is FrankenPHP's file watcher; build-static.sh appends
 # brotli, which caddy-cbrotli needs, whatever this says.
-RUN PHP_EXTENSIONS="${PHP_EXTENSIONS}" \
+# spc asks the GitHub API which release of each library to fetch, and a call
+# refused at the unauthenticated rate limit fails the build. The token comes
+# as a secret, which no layer, history entry or cache key ever holds, as they
+# would an ARG or ENV. Without the secret GITHUB_TOKEN is empty, and spc then
+# sends no token at all.
+RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
+    PHP_EXTENSIONS="${PHP_EXTENSIONS}" \
     PHP_EXTENSION_LIBS=watcher \
     PHP_VERSION="${PHP_VERSION}" \
     CADDY_VERSION="${CADDY_VERSION}" \

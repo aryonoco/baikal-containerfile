@@ -95,11 +95,17 @@ jobs:
 
       # An OCI layout is used to enable attestations
       - name: Build the image
+        env:
+          # Read-only, for spc's calls to the GitHub API, which fail the
+          # build once the runner's unauthenticated rate limit runs out. It
+          # reaches build-static.sh as a secret, never a build argument.
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           image=$(just --evaluate IMAGE)
           args=(
             --attest type=provenance,mode=max
             --attest type=sbom
+            --secret id=github_token,env=GITHUB_TOKEN
             --output type=oci,dest=/tmp/image.tar,rewrite-timestamp=true
             -f Containerfile -t "${image}"
           )
@@ -118,6 +124,13 @@ jobs:
             )
           fi
           docker buildx build "${args[@]}" .
+
+      # Every blob in the archive, attestations included. The provenance
+      # records each build argument, so a token passed as one shows here.
+      - name: Check the image for the token
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: test/token-leak.sh /tmp/image.tar
 
       - name: Publish the image as an artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

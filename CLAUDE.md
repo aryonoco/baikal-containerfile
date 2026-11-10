@@ -160,7 +160,7 @@ breaking change.
   reuse, just, jq, pinact, trivy and zizmor are all listed there. Every justfile
   recipe runs through `mise exec`, so a recipe resolves those binaries and not a
   same-named one on PATH. `gh` is the exception, and only as a local fallback
-  for the API token pinact and zizmor need; CI passes its own
+  for the API token pinact, zizmor and spc's build need; CI passes its own
 - **`just lint` needs a running Docker daemon**, for `docker build --check`.
   `--check` is a buildx flag with no podman equivalent, so this one gate does
   not honour `ENGINE` and does not run without dockerd
