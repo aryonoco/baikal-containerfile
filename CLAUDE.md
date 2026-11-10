@@ -204,9 +204,10 @@ breaking change.
   `baikal-bootstrap` reaches the protected method through a subclass — and
   refuses to start if it throws, or if `configured_version` did not move.
   `test/upstream-upgrade-api.sh` fails the build if the members it relies on
-  change. The acceptance suite upgrades a volume made by the first published
-  image and compares every table with a fresh install's, so a migration that
-  silently did not run fails CI rather than shipping
+  change. The acceptance suite upgrades a volume made by the last 0.12.1
+  image published before the move to divbast, and compares every table with
+  a fresh install's, so a migration that silently did not run fails CI
+  rather than shipping
 
 ## Code quality
 
