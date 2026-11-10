@@ -183,8 +183,8 @@ this repository's rulesets are all managed from
 
 1. Create a GitHub App with its webhook turned off and these repository
    permissions: Checks, Commit statuses, Contents, Issues, Pull requests and
-   Workflows read and write; Metadata read. Install it on this repository
-   only.
+   Workflows read and write; Dependabot alerts and Metadata read. Install it
+   on this repository only.
 2. Create an environment called `renovate` whose deployment branches are
    limited to `main`. Give it a variable `RENOVATE_APP_CLIENT_ID` holding the
    App's client ID, and a secret `RENOVATE_APP_PRIVATE_KEY` holding a private
