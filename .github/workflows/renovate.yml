@@ -79,8 +79,9 @@ jobs:
     # Everything goes through the App token below; the job's own needs nothing.
     permissions: {}
     steps:
-      # Narrowed to this repository and to the permissions Renovate uses, even
-      # though the App's installation is already no wider than that.
+      # Narrowed to this repository and to the permissions Renovate uses: the
+      # org App is installed on every divbast repository. A permission the
+      # App gains reaches Renovate only once it is named here.
       - id: token
         uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
@@ -92,6 +93,7 @@ jobs:
           permission-issues: write
           permission-pull-requests: write
           permission-statuses: write
+          permission-vulnerability-alerts: read
           permission-workflows: write
 
       # No checkout. Renovate clones the repository through the token and reads
