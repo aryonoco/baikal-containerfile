@@ -259,6 +259,28 @@ jobs:
           sarif_file: /tmp/image.tar.sarif
           category: trivy-${{ matrix.arch }}
 
+  # The one check main's ruleset requires, so the job list can change without
+  # touching the ruleset. GitHub counts a skipped required check as passing,
+  # so this runs always and treats a skipped or cancelled job as a failure.
+  required:
+    name: required
+    needs: [lint, build, test, scan]
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Fail unless every needed job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in ${RESULTS}; do
+            if [ "${result}" != success ]; then
+              echo "a required job ended ${result}" >&2
+              exit 1
+            fi
+          done
+
   publish:
     name: publish
     needs: [lint, test, scan]
