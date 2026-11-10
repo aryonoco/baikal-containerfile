@@ -30,7 +30,10 @@ ARG CBROTLI_VERSION
 ARG MERCURE_VERSION
 ARG VULCAIN_VERSION
 ARG SPC_COMMIT
-WORKDIR /go/src/app
+# No WORKDIR: BuildKit stamps the directory one creates with
+# SOURCE_DATE_EPOCH, which build.yml sets to the commit time, and that gave
+# this whole stage a new cache key on every commit. Every path below is
+# absolute instead.
 # spc from source at the pinned commit: git checks a fetch by commit against
 # its hash, and composer installs from that commit's own lock file.
 # build-static.sh skips its nightly download when dist/spc is executable, so
@@ -68,7 +71,7 @@ RUN --mount=type=secret,id=github_token,env=GITHUB_TOKEN \
     PHP_VERSION="${PHP_VERSION}" \
     CADDY_VERSION="${CADDY_VERSION}" \
     XCADDY_ARGS="--with github.com/dunglas/caddy-cbrotli@${CBROTLI_VERSION} --with github.com/dunglas/mercure/caddy@${MERCURE_VERSION} --with github.com/dunglas/vulcain/caddy@${VULCAIN_VERSION}" \
-    ./build-static.sh
+    /go/src/app/build-static.sh
 RUN cp "$(ls /go/src/app/dist/frankenphp-linux-*)" /go/src/app/dist/frankenphp
 COPY test/pinned-versions.sh /tmp/pinned-versions.sh
 RUN /tmp/pinned-versions.sh /go/src/app/dist/frankenphp "${PHP_VERSION}" \
