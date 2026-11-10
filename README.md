@@ -110,6 +110,14 @@ is read back off the engine:
 
     docker inspect --format '{{json .State.Health}}' <container>
 
+PHP's own errors never reach a response: the image sets `display_errors` off and
+sends real errors (fatal, parse, compile) to the container log (stdout, as JSON), and
+`/healthz` fails naming `ini` if that setting is not in force. Baikal's own
+exception pages, the 200 pages described at the top of this section, are
+different: upstream's `handleException()` prints the exception and its stack
+trace into the page itself, and no PHP setting can stop it. That is upstream's
+behaviour, and this image leaves it alone.
+
 ## Env Vars
 
 | Variable | Default | Notes |

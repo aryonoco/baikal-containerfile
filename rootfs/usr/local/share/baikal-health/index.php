@@ -19,6 +19,16 @@ use Symfony\Component\Yaml\Yaml;
  */
 function health(): array
 {
+    // Shipped by php/baikal.ini. Without it the server SAPI runs on PHP's own
+    // defaults, which print every warning into the response and log none of
+    // them. This reads the live setting, so it proves the file was scanned and
+    // not merely that it was copied.
+    $display = filter_var(ini_get('display_errors'), FILTER_VALIDATE_BOOLEAN);
+    $log = filter_var(ini_get('log_errors'), FILTER_VALIDATE_BOOLEAN);
+    if ($display || !$log) {
+        return [503, 'ini'];
+    }
+
     // Unreachable in a serving container: baikal-bootstrap exits 1 rather than
     // pcntl_exec the server when this file is missing, and the root filesystem
     // is read-only, so nothing that answers on :8081 can be without it.

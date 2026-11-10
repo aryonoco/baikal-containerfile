@@ -109,6 +109,7 @@ FROM ${RUNTIME_IMAGE}
 COPY --from=frankenphp-build --chmod=0755 /go/src/app/dist/frankenphp /usr/local/bin/frankenphp
 COPY --from=fetch --chown=root:root /build/baikal /var/www/baikal
 COPY --chown=root:root caddy/Caddyfile /etc/caddy/Caddyfile
+COPY --chown=root:root php/baikal.ini /etc/frankenphp/php.d/baikal.ini
 COPY --from=fetch --chown=65532:65532 /data /data
 
 # Trailing slashes are mandatory
