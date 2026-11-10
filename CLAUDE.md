@@ -111,7 +111,7 @@ breaking change.
   is already shipped surfaces there as a code scanning alert, not a red run.
   `.github/workflows/stall.yml` fails each day that updates have stopped
   flowing: a Renovate PR stuck, Renovate silent, or two slots lost in a row
-- **Every root of the FrankenPHP binary is pinned in the Containerfile**, not
+- **PHP, Caddy, its plugins and spc are pinned in the Containerfile**, not
   resolved at build time. Left alone, `build-static.sh` asks php.net for the
   newest PHP 8.5 and xcaddy asks the Go proxy for the newest Caddy and
   plugins, so two builds of one commit shipped different binaries.

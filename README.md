@@ -146,8 +146,12 @@ and back up before you move the tag.
 
 ## Dependency updates
 
-Every input to the image is pinned: the builder and runtime images by digest,
-Baikal by version and checksum. A pin only moves through a pull request, and
+Every input the Containerfile names is pinned: the builder and runtime images
+by digest, Baikal by version and checksum, and PHP, Caddy, its plugins and
+static-php-cli by version or commit. The C libraries static-php-cli builds
+into FrankenPHP are not: it still takes openssl, zlib and others from their
+newest release whenever the image is built.
+A pin only moves through a pull request, and
 [Renovate](https://docs.renovatebot.com/) opens those. It runs every morning,
 after every merge to `main` and whenever CI finishes on one of its branches,
 from `.github/workflows/renovate.yml` in this repository, as the divbast
