@@ -90,16 +90,22 @@
       "commitMessagePrefix": "build:"
     },
     {
-      "description": "One PR for the builder, Caddy, its plugins and static-php-cli. A FrankenPHP release can require a newer Caddy or plugin, and test/pinned-versions.sh fails any build whose binary disagrees with a pin, so moving one without the others goes red. build-static.sh drives spc, so a builder can need a newer spc too.",
+      "description": "One PR for the builder, Caddy and its plugins. A FrankenPHP release can require a newer Caddy or plugin, and test/pinned-versions.sh fails any build whose binary disagrees with a pin, so moving one without the others goes red.",
       "matchDepNames": [
         "dunglas/frankenphp",
         "github.com/caddyserver/caddy/v2",
         "github.com/dunglas/caddy-cbrotli",
         "github.com/dunglas/mercure/caddy",
-        "github.com/dunglas/vulcain/caddy",
-        "crazywhalecc/static-php-cli"
+        "github.com/dunglas/vulcain/caddy"
       ],
       "groupName": "frankenphp"
+    },
+    {
+      "description": "static-php-cli in a PR of its own, moved at most once a day. Its v3 branch took 1 to 13 commits on each day it moved from September to November 2026, and in the frankenphp group each one restarted the builder's CI from a cold cache. renovate.json sets no schedule of its own because renovate.yml's 18:17 UTC cron is Renovate's only clock, so this window exists for spc alone: 18:00 to 03:59 UTC holds that cron and every start GitHub gave it in the three weeks to 2026-11-10, which came 2.5 to 7.25 hours late, between 20:51 and 01:32, with over two hours to spare. updateNotScheduled is off because Renovate would otherwise still push a newer commit to an open branch outside the window, which is exactly what the runs that merges and CI completions start during the rest of the day would do. A run that starts later still costs spc a day, nothing more. A builder that needs a newer spc fails its CI until this lands.",
+      "matchDepNames": ["crazywhalecc/static-php-cli"],
+      "schedule": ["* 0-3,18-23 * * *"],
+      "updateNotScheduled": false,
+      "commitBody": "static-php-cli moved the head of its v3 branch, which has no tags, so the pinned commit fell behind it.\n\nDeveloped-by: Aryan Ameri <github@aryan.ameri.coffee>\nAssisted-by: <Renovate:renovate-{{{renovateVersion}}}>"
     },
     {
       "description": "Subject prefix for the Baikal release.",

@@ -116,7 +116,7 @@ breaking change.
   newest PHP 8.5 and xcaddy asks the Go proxy for the newest Caddy and
   plugins, so two builds of one commit shipped different binaries.
   `PHP_VERSION`, `CADDY_VERSION` and the three plugin ARGs fix them; Renovate
-  moves the builder digest, Caddy, the plugins and spc together as one
+  moves the builder digest, Caddy and the plugins together as one
   `frankenphp` group; and `test/pinned-versions.sh` fails the build if the
   binary's own build info disagrees with any pin, because minimum version
   selection lifts a module above its pin without a word. **spc is pinned by
@@ -127,7 +127,10 @@ breaking change.
   and puts a wrapper at `dist/spc`, which `build-static.sh` runs in place of
   the download; `test/pinned-spc.sh` fails the build if anything else ran
   `spc craft`. Its v3 branch has no tags, so Renovate follows the branch head
-  by digest. **What spc downloads is still chosen at build time:** several
+  by digest, in a PR of its own and at most once a day: the branch moves up
+  to 13 times a day, and its schedule in `renovate.json` holds the daily run.
+  A builder that needs a newer spc goes red until that PR lands. **What spc
+  downloads is still chosen at build time:** several
   libraries, openssl and zlib among them, come from the newest GitHub release
   that matches, so the pin fixes how the binary is built but not every
   source that goes into it
