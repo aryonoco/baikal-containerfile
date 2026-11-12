@@ -15,7 +15,7 @@ ARG VULCAIN_VERSION=v1.4.6
 # static-php-cli, which build-static.sh would otherwise download as an
 # unchecked nightly binary on every build. Its v3 branch has no tags, so
 # Renovate follows the branch head by commit. test/pinned-spc.sh checks it ran.
-ARG SPC_COMMIT=ff04d4af9ba44f6c194239d733e0529cc6ddecea
+ARG SPC_COMMIT=3ba9ffa0593b94202b48d6dde51e489191ecdbf1
 # Renovate moves these two in one PR and computes the checksum itself; its
 # regex needs them adjacent and in this order.
 ARG BAIKAL_VERSION=0.13.0
