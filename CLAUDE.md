@@ -128,8 +128,12 @@ breaking change.
   its extensions differ from Baikal's list; and it records the C libraries
   static-php-cli still takes at their newest release. Any change there
   reaches this image only through a PR that moves the `:baikal` digest,
-  which Renovate opens. A local `just build` does not verify the
-  attestation
+  which Renovate opens. `divbast-verify-frankenphp` counts every mention
+  of the image in the Containerfile's instructions, wherever it stands,
+  and refuses all but exactly one, that `COPY`'s `--from=`: never name the
+  image in an `ARG`, a `LABEL` or a `RUN`. A local `just build` does not
+  verify the attestation; `just ci-tools && .ci/bin/divbast-verify-frankenphp`
+  does, with gh 2.102.0 or newer logged in
 - **The binary must never carry a file capability.** The official FrankenPHP build
   carries `cap_net_bind_service=ep`, and a binary with a file capability cannot be
   exec'd at all under `--cap-drop ALL` — it dies with `Operation not permitted`
@@ -278,10 +282,13 @@ breaking change.
   image lacks. No release can make an advisory against something already
   shipped any worse, so blocking on one only holds back whatever else the
   release fixes. It is reported instead: on the run's summary page and,
-  from main and the daily run, as a code scanning alert. When the published
-  image is absent or private, every finding is advisory, with a warning; a
-  public image the registry refuses, or a registry that cannot be reached,
-  fails the scan rather than waving it through
+  from main and the daily run, as a code scanning alert. In CI, when the
+  published image is absent or private, every finding is advisory, with a
+  warning, and a public image the registry refuses fails the scan rather
+  than waving it through. Locally `divbast-scan` never asks GitHub why the
+  registry refused, so a refusal is advisory, with a warning that only CI
+  can tell what it means. Anywhere, a registry that cannot be reached
+  fails the scan
 - REUSE-compliant SPDX headers on every file; licence is **BSD-2-Clause**
 - The acceptance suite runs the image under the *exact* confinement the contract
   claims, so a check can never pass under looser settings than we ship. What CI
