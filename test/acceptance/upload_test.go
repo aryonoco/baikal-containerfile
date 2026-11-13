@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/divbast/ci/harness"
 )
@@ -35,6 +36,13 @@ const bodyCap = 64_000_000
 // room for the PHP session file a request may leave, and none for the
 // body.
 const tmpSlack = 1 << 20
+
+// continueWithin is how long the over-cap PUT that declares its length
+// waits for the server to take its body, as Expect: 100-continue asks,
+// before it sends the body anyway: as long as the whole request may take,
+// so a slow answer never has the client streaming the body into a
+// connection the server is about to reset.
+const continueWithin = 30 * time.Second
 
 // Where the uploads go, in alice's addressbook.
 const (
@@ -68,11 +76,11 @@ func TestLargeObjectRoundTrips(t *testing.T) {
 }
 
 // TestBodyOverCapRefused puts a body one byte over the cap, and checks it
-// is refused with 413, never a 500, and leaves /tmp as it found it, and
-// that the server goes on serving. Caddy refuses a body whose
+// is refused with 413, never a 500, that the server goes on serving, and
+// that /tmp is left as it was found. Caddy refuses a body whose
 // Content-Length says it is too big before PHP reads any of it; one sent
 // chunked, with no length, it cuts off at the cap, and refuses the same
-// way.
+// way. /tmp is read last, so PHP has long finished with what it spooled.
 func TestBodyOverCapRefused(t *testing.T) {
 	t.Parallel()
 	e, image := underTest(t)
@@ -86,8 +94,8 @@ func TestBodyOverCapRefused(t *testing.T) {
 	resp, err = putOverCap(ctx, s, -1)
 	harness.Answers(t, "PUT one byte over the 64MB request body cap, chunked with no Content-Length",
 		http.StatusRequestEntityTooLarge, resp, err)
-	tmpBack(t, s.C, "/tmp use after the refused PUTs is back within 1 MiB of where it was", before)
 	harness.StatusIs(t, s, "/dav.php after the refused PUTs", http.StatusUnauthorized, "/dav.php")
+	tmpBack(t, s.C, "/tmp use after the refused PUTs is back within 1 MiB of where it was", before)
 }
 
 // withAddressbook adds alice, and her addressbook, to s, or fails t: what
@@ -130,8 +138,16 @@ func largeCard() []byte {
 
 // putOverCap puts bodyCap+1 bytes as alice, and reads the answer, with
 // length as its Content-Length, or chunked when length is -1. The body is
-// streamed, as a client streams an upload, so the suite never holds it,
-// and goes without Expect: 100-continue, as DAV clients send a PUT.
+// streamed, so the suite never holds it.
+//
+// With a length, the PUT sends Expect: 100-continue, and the body only
+// once the server says it will read it. A server that refuses on the
+// length alone answers without reading any of the body, and then resets
+// a connection still carrying it, so a client already streaming the body
+// could lose the answer to the reset. Asked first, the server refuses
+// before the body leaves, and one that would read it says so, and gets
+// it. Chunked, the server reads up to the cap before it answers, so the
+// body is all but sent by then.
 func putOverCap(ctx context.Context, s *harness.Serving, length int64) (harness.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPut, s.Base+overCapPath, io.LimitReader(zeros{}, bodyCap+1))
 	if err != nil {
@@ -140,7 +156,12 @@ func putOverCap(ctx context.Context, s *harness.Serving, length int64) (harness.
 	req.ContentLength = length
 	req.Header.Set("Authorization", basicAuth())
 	req.Header.Set("Content-Type", "text/vcard")
-	resp, err := harness.HostClient().Do(req)
+	client := harness.HostClient()
+	if length >= 0 {
+		req.Header.Set("Expect", "100-continue")
+		client.Transport = &http.Transport{ExpectContinueTimeout: continueWithin, DisableKeepAlives: true}
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return harness.Response{}, err
 	}
