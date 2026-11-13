@@ -18,8 +18,11 @@ SCAN=(--vex baikal.openvex.json --severity "HIGH,CRITICAL" --format json)
 
 # A clean report from a scan that saw no packages means it never looked.
 has_packages() {
-    jq -e '(([.Results[]? | .Packages // [] | length] | add) // 0) > 0' "${1}" >/dev/null \
-        || { echo "no packages in ${2}: the scan found nothing to scan, not nothing wrong" >&2; exit 1; }
+	jq -e '(([.Results[]? | .Packages // [] | length] | add) // 0) > 0' "${1}" >/dev/null ||
+		{
+			echo "no packages in ${2}: the scan found nothing to scan, not nothing wrong" >&2
+			exit 1
+		}
 }
 
 trivy image --input "${LAYOUT}" "${SCAN[@]}" --output "${REPORT}"
@@ -32,22 +35,22 @@ arch=$(jq -er '.Metadata.ImageConfig.architecture' "${REPORT}")
 # is published. --skip-db-update, so both reports come from one database: a
 # finding only a newer database knows about would otherwise read as new.
 if trivy image --image-src remote --platform "linux/${arch}" --skip-db-update \
-        "${SCAN[@]}" --output "${BASELINE}" "${PUBLISHED}" 2>"${BASELINE}.log"; then
-    has_packages "${BASELINE}" "${PUBLISHED}"
-    against=$(jq -r '.Metadata.RepoDigests[0] // .ArtifactName' "${BASELINE}")
+	"${SCAN[@]}" --output "${BASELINE}" "${PUBLISHED}" 2>"${BASELINE}.log"; then
+	has_packages "${BASELINE}" "${PUBLISHED}"
+	against=$(jq -r '.Metadata.RepoDigests[0] // .ArtifactName' "${BASELINE}")
 elif grep -qE ': (MANIFEST_UNKNOWN|NAME_UNKNOWN|DENIED): ' "${BASELINE}.log"; then
-    # ghcr.io answers DENIED for a repository that does not exist. With
-    # nothing published, nothing is already shipped: every finding is new.
-    echo '{}' >"${BASELINE}"
-    against="nothing, because the registry has no ${PUBLISHED}"
+	# ghcr.io answers DENIED for a repository that does not exist. With
+	# nothing published, nothing is already shipped: every finding is new.
+	echo '{}' >"${BASELINE}"
+	against="nothing, because the registry has no ${PUBLISHED}"
 else
-    cat "${BASELINE}.log" >&2
-    echo "could not scan ${PUBLISHED}, so no finding can be told apart from one already published" >&2
-    exit 1
+	cat "${BASELINE}.log" >&2
+	echo "could not scan ${PUBLISHED}, so no finding can be told apart from one already published" >&2
+	exit 1
 fi
 
 findings() {
-    jq -c '[.Results[]? | . as $result | .Vulnerabilities[]? | {
+	jq -c '[.Results[]? | . as $result | .Vulnerabilities[]? | {
         id: .VulnerabilityID, pkg: .PkgName, version: .InstalledVersion,
         fixed: (.FixedVersion // ""), severity: .Severity, url: (.PrimaryURL // ""),
         where: (if $result.Class == "os-pkgs" then "\($result.Type) package" else $result.Target end)
@@ -75,7 +78,7 @@ jq -r --arg against "${against}" '
     "\(.old | length) already published, so advisory:", (.old[] | line)' <<<"${split}"
 
 if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
-    jq -r --arg arch "${arch}" --arg against "${against}" '
+	jq -r --arg arch "${arch}" --arg against "${against}" '
         def cell: tostring | gsub("[|]"; "\\|") | gsub("\n"; " ");
         def id: if .url == "" then .id else "[\(.id)](\(.url))" end;
         def table:
@@ -91,8 +94,8 @@ if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
     ' <<<"${split}" >>"${GITHUB_STEP_SUMMARY}"
 fi
 
-if (( new > 0 )); then
-    echo "${new} finding(s) the published image does not have. Move what carries them, or argue reachability in baikal.openvex.json." >&2
-    exit 1
+if ((new > 0)); then
+	echo "${new} finding(s) the published image does not have. Move what carries them, or argue reachability in baikal.openvex.json." >&2
+	exit 1
 fi
 echo "nothing new against what is published (${old} advisory)"

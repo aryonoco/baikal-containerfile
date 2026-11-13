@@ -161,16 +161,21 @@ into FrankenPHP are not: it still takes openssl, zlib and others from their
 newest release whenever the image is built.
 A pin only moves through a pull request, and
 [Renovate](https://docs.renovatebot.com/) opens those. It runs every morning,
-after every merge to `main` and whenever CI finishes on one of its branches,
-from `.github/workflows/renovate.yml` in this repository, as the divbast
-org's `divbast-renovate` GitHub App, and reports on the Dependency Dashboard
-issue. A new Baikal release arrives with its checksum already computed.
+after every merge to `main`, whenever CI finishes on one of its branches and
+when the Dependency Dashboard issue is edited, from
+`.github/workflows/renovate.yml`, which calls divbast/ci's shared Renovate
+workflow, as the divbast org's `divbast-renovate` GitHub App, and reports on
+the Dependency Dashboard issue. Its settings are divbast/renovate-config's
+shared presets, and `renovate.json` adds Baikal's release manager and the
+pins of the FrankenPHP build. A new Baikal release arrives with its checksum
+already computed.
 
 Renovate merges its own pull requests once every check on one has passed,
 majors and Baikal releases included, while the repository variable
-`BAIKAL_AUTOMERGE` is `enabled`. Any other value, or none, stops it from the
-next run, and Renovate goes on opening and rebasing pull requests for a person
-to merge:
+`BAIKAL_AUTOMERGE` is `enabled`. A new major version of divbast/ci first
+waits for someone to approve it on the Dependency Dashboard. Any other value
+of the variable, or none, stops merging from the next run, and Renovate goes
+on opening and rebasing pull requests for a person to merge:
 
     gh variable set BAIKAL_AUTOMERGE --body disabled
 
@@ -184,14 +189,18 @@ updates land in a day, users see one new image at most. An urgent fix need not
 wait: a manual run of the `build` workflow from `main` (Actions, build, Run
 workflow) publishes at once.
 
-A daily stall check, `.github/workflows/stall.yml`, fails, and GitHub emails
-you, when a Renovate pull request has been open more than 14 days or red or
-pending for more than a day, when Renovate has not succeeded in a day, or when
-two daily runs should have published and did not.
+A daily stall check, `.github/workflows/stall.yml`, which calls divbast/ci's
+shared one, fails, and GitHub emails you, when a Renovate pull request has
+been open more than 14 days or red or pending for more than a day, when
+Renovate has not succeeded in a day, or when two daily runs should have
+published and did not.
 
-The App, the `renovate` environment holding its key, `BAIKAL_AUTOMERGE` and
-this repository's rulesets are all managed from
-[divbast/infra](https://github.com/divbast/infra). A fork needs its own App:
+[divbast/infra](https://github.com/divbast/infra) manages the `renovate`
+environment, the App's client ID and private key in it, `BAIKAL_AUTOMERGE`
+and this repository's rulesets. It creates `BAIKAL_AUTOMERGE` and then leaves
+its value alone, so an apply never turns merging back on. The
+`divbast-renovate` App itself, its permissions and its installation are not
+managed there: they are set up by hand. A fork needs its own App:
 
 1. Create a GitHub App with its webhook turned off and these repository
    permissions: Checks, Commit statuses, Contents, Issues, Pull requests and
@@ -205,6 +214,18 @@ this repository's rulesets are all managed from
    appears, listing every dependency Renovate found.
 4. When you are ready for Renovate to merge on its own, run
    `gh variable set BAIKAL_AUTOMERGE --body enabled`.
+
+## Building it yourself
+
+With [mise](https://mise.jdx.dev/), Composer and Docker: `just setup` checks
+divbast/ci out into `.ci/` at the commit the workflows pin and installs the
+toolchain, and `just ci` runs every gate, the image build included. The
+build and the lint gates that call GitHub read a token from `GITHUB_TOKEN`
+and nowhere else, and refuse anything but a fine-grained personal access
+token (`github_pat_`) or the job token CI passes (`ghs_`). One limited to
+reading public repositories is enough. Pass it per command rather than
+exporting it, as divbast/ci's README says under
+[Local GitHub token](https://github.com/divbast/ci#local-github-token).
 
 ## AI/LLM Disclosure
 

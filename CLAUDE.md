@@ -87,14 +87,15 @@ breaking change.
   this repository collects them on its own.** Rebuilding an unchanged
   Containerfile does not pick them up. **Renovate is the update path**: it runs
   every morning, after every merge to main and whenever CI finishes on one
-  of its branches, from
-  `.github/workflows/renovate.yml`, as the org's `divbast-renovate` App,
-  managed from `divbast/infra`. After a merge it rebases every
+  of its branches, from `.github/workflows/renovate.yml`, which calls
+  divbast/ci's `renovate.yml`, as the org's `divbast-renovate` App. After a
+  merge it rebases every
   open PR left behind main, since GitHub re-runs no checks when a base moves
   and a green check on a stale base proves nothing. **It merges its own
   PRs** once every check passes, with a squash, while the repository
   variable `BAIKAL_AUTOMERGE` is `enabled`; any other value stops merging from
-  the next run. A Baikal release arrives with
+  the next run, and a new divbast/ci major waits for approval on the
+  Dependency Dashboard. A Baikal release arrives with
   `BAIKAL_SHA256` already computed from the release asset, and a digest bump
   arrives as a pull request that leaves a record of what moved and
   when, which a blind rebuild does not. Trivy cannot see FrankenPHP's own advisories — the
@@ -109,8 +110,9 @@ breaking change.
   The daily run also catches upstream breakage early — a release URL that
   moved, a builder that changed behaviour — and a new advisory against what
   is already shipped surfaces there as a code scanning alert, not a red run.
-  `.github/workflows/stall.yml` fails each day that updates have stopped
-  flowing: a Renovate PR stuck, Renovate silent, or two slots lost in a row
+  `.github/workflows/stall.yml`, through divbast/ci's `stall.yml`, fails
+  each day that updates have stopped flowing: a Renovate PR stuck,
+  Renovate silent, or two slots lost in a row
 - **PHP, Caddy, its plugins and spc are pinned in the Containerfile**, not
   resolved at build time. Left alone, `build-static.sh` asks php.net for the
   newest PHP 8.5 and xcaddy asks the Go proxy for the newest Caddy and
@@ -150,26 +152,65 @@ breaking change.
 - The application tree stays root-owned and unwritten. Everything mutable lives
   in `/data`
 
+## Where the shared parts live
+
+- **divbast/ci.** `just setup` checks it out into `.ci/`, which git and
+  the build context both ignore, at the one commit every workflow calls it
+  at: a release's full SHA, with its tag as the comment. `renovate.yml` and
+  `stall.yml` here call its reusable workflows of the same names and keep
+  their own triggers. The justfile imports `.ci/just/common.just` for the
+  lint recipes and `_github-token`, and runs them from a recipe's body,
+  never as a dependency, so it still parses before `.ci` exists. A change
+  to ci reaches this repository only through the Renovate PR that moves
+  every pin of it at once, and `just setup` refuses workflows that call ci
+  at more than one commit
+- **divbast/renovate-config** holds the presets `renovate.json` extends.
+  `renovate.json` keeps Baikal's release manager and the FrankenPHP build's
+  pins, with the rules that go with them
+- **divbast/infra** manages the `renovate` environment, the App's client ID
+  and private key in it, the `BAIKAL_AUTOMERGE` kill switch, which it
+  creates and then never sets again, and this repository's rulesets. The
+  `divbast-renovate` App itself, its permissions and its installation are
+  set up by hand, outside infra
+
 ## Key commands
 
-- `just setup` — install the pinned toolchain. One command on a fresh clone
-- `just build` — build the image locally
+- `just setup` — fetch divbast/ci into `.ci/` at the commit the workflows
+  pin, then install the pinned toolchain and PHPStan. One command on a
+  fresh clone, and again whenever the pin moves; `just lint` fails, naming
+  it, when `.ci` is not at the pinned commit (`ci-fresh`)
+- `just build` — build the image locally. Needs `GITHUB_TOKEN`, below
 - `just test` — build, then run the acceptance suite against it
-- `just lint` — pinact, zizmor, hadolint, `docker build --check`, ShellCheck,
-  `reuse lint` and PHPStan
+- `just lint` — from common.just, `ci-fresh`, pinact, zizmor, actionlint,
+  ShellCheck and shfmt, and `reuse lint`; then hadolint,
+  `docker build --check` and PHPStan
 - `just scan` — Trivy over the image archive `just archive` writes and over
   the published `:latest`, failing only on what the archive would add. Needs
   network access to ghcr.io
-- `just actions-pin`, `just actions-update` — move the workflow's action pins
+- `just actions-pin`, `just actions-update` — move the workflows' action pins
 - `just ci` — every gate, locally. Run this before committing
 
 ## Where the toolchain comes from
 
-- **`mise.toml` is where tool versions are written.** hadolint, ShellCheck,
-  reuse, just, jq, pinact, trivy and zizmor are all listed there. Every justfile
-  recipe runs through `mise exec`, so a recipe resolves those binaries and not a
-  same-named one on PATH. `gh` is the exception, and only as a local fallback
-  for the API token pinact, zizmor and spc's build need; CI passes its own
+- **`mise.toml` is where tool versions are written.** Go, hadolint,
+  ShellCheck, shfmt, actionlint, reuse, just, jq, pinact, trivy and zizmor
+  are all listed there. Every justfile recipe but `setup`, which installs
+  them, and `ci-checkout`, which runs before them, goes through `mise
+  exec`, so a recipe resolves those binaries and not a same-named one on
+  PATH
+- **The GitHub token is `GITHUB_TOKEN` and nothing else.** The recipes that
+  call GitHub, common.just's pinact and zizmor recipes and `build`, for
+  spc's API calls, first run common.just's `_github-token`, which refuses
+  anything but a fine-grained personal access token (`github_pat_`) locally
+  or CI's job token (`ghs_`), naming the kind and never the token. No
+  recipe calls `gh`. Pass the token per command and never export it: see
+  the Local GitHub token section of divbast/ci's README
+- **Go is here for divbast/ci's tools**, which `ci-fresh` builds before it
+  checks `.ci`; this repository has no Go code of its own.
+  `GOTOOLCHAIN=local` keeps it the pinned Go, never one ci's `go.mod` would
+  download. `GOFLAGS=-mod=readonly`, because Composer's `vendor/` sits at
+  the root, where Go would take it for a Go vendor directory once a
+  `go.mod` here has a `require`
 - **`just lint` needs a running Docker daemon**, for `docker build --check`.
   `--check` is a buildx flag with no podman equivalent, so this one gate does
   not honour `ENGINE` and does not run without dockerd

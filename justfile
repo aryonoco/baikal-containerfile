@@ -12,31 +12,56 @@ SARIF := ARCHIVE + ".sarif"
 PUBLISHED := env_var_or_default("PUBLISHED", "ghcr.io/divbast/baikal:latest")
 BASELINE := ARCHIVE + ".published.json"
 
+# The lint recipes, and _github-token, come from divbast/ci's common.just.
+# Each is run from a recipe's body, never named as a dependency, so
+# `just setup` still runs before .ci exists.
+import? '.ci/just/common.just'
+
 # Tool versions live in mise.toml
 
 default:
     @just --list
 
-setup:
+# Fetch divbast/ci at the commit the workflows pin, then install the toolchain
+setup: ci-checkout
     #!/usr/bin/env bash
-    # This is the one recipe that must not run through `mise exec` shell 
+    # Not through the mise exec shell: this is what installs what it runs
     set -euo pipefail
     mise install
     composer install
 
+# Fetch divbast/ci at the commit the workflows pin, into .ci, and nothing else
+ci-checkout:
+    #!/usr/bin/env bash
+    # Not through the mise exec shell, which would first install what is missing
+    set -euo pipefail
+    # The one commit the workflows call divbast/ci at, spelt in any case
+    uses="^[[:space:]]*(-[[:space:]]+)?uses:[[:space:]]*[\"']?divbast/ci/[^@[:space:]\"']+@[^[:space:]\"'#]+"
+    sha=$(grep -hoiE "${uses}" .github/workflows/*.y*ml | sed 's/.*@//' | sort -u | paste -sd ' ' - || true)
+    if [[ ! "${sha}" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "ci-checkout: the workflows must call divbast/ci at one full commit SHA, not at: ${sha:-none}" >&2
+        exit 1
+    elif [[ "$(git -C .ci rev-parse HEAD 2>/dev/null || true)" == "${sha}" ]]; then
+        echo "ci-checkout: .ci is already at ${sha}"
+        exit 0
+    fi
+    changed=$([[ ! -e .ci/.git ]] || git -C .ci status --porcelain)
+    if [[ -n "${changed}" ]]; then
+        printf 'ci-checkout: moving .ci to %s would carry its own changes across, or stop on them; save or discard them first:\n%s\n' "${sha}" "${changed}" >&2
+        exit 1
+    fi
+    git init -q .ci
+    git -C .ci fetch -q --depth 1 https://github.com/divbast/ci "${sha}"
+    git -C .ci checkout -q FETCH_HEAD && rm -rf .ci/bin
+
 # Build the image locally
 build:
-    # Docker only auto-discovers `Dockerfile`. Podman finds either
-    # gh's token, when gh is logged in, reaches spc as a secret so its GitHub
-    # API calls escape the unauthenticated rate limit. It never reaches a layer.
-    token="${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}"; \
-    if [[ -n "${token}" ]]; then \
-        GITHUB_TOKEN="${token}" {{ ENGINE }} build --secret id=github_token,env=GITHUB_TOKEN \
-            -f Containerfile -t {{ IMAGE }} .; \
-    else \
-        echo "gh is not logged in: building without a GitHub token" >&2; \
-        {{ ENGINE }} build -f Containerfile -t {{ IMAGE }} .; \
-    fi
+    # GITHUB_TOKEN reaches spc as a build secret, not a build argument, so
+    # its GitHub API calls escape the unauthenticated rate limit. It is
+    # refused unless it is a fine-grained token or CI's job token. Docker
+    # only auto-discovers `Dockerfile`.
+    {{ just_executable() }} _github-token
+    {{ ENGINE }} build --secret id=github_token,env=GITHUB_TOKEN -f Containerfile -t {{ IMAGE }} .
 
 acceptance:
     ENGINE={{ ENGINE }} IMAGE={{ IMAGE }} ./test/acceptance.sh
@@ -48,43 +73,19 @@ test: build acceptance
 archive:
     {{ ENGINE }} image save -o {{ ARCHIVE }} {{ IMAGE }}
 
-# Fail if the archive holds the GitHub token the build was given
-token-check:
-    token="${GITHUB_TOKEN:-$(gh auth token 2>/dev/null || true)}"; \
-    if [[ -n "${token}" ]]; then \
-        GITHUB_TOKEN="${token}" ./test/token-leak.sh {{ ARCHIVE }}; \
-    else \
-        echo "gh is not logged in: the build had no token to leak"; \
-    fi
-
 # Fail on any HIGH or CRITICAL vulnerability the published image does not have
 scan:
     rm -rf {{ LAYOUT }} && mkdir {{ LAYOUT }} && tar xf {{ ARCHIVE }} -C {{ LAYOUT }}
     ./test/scan.sh {{ LAYOUT }} {{ REPORT }} {{ PUBLISHED }} {{ BASELINE }} {{ SARIF }}
 
-# Verify every action is a SHA
-actions-check:
-    GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" pinact run --verify --check
-
-# Rewrite tag references to the SHA
-actions-pin:
-    GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" pinact run
-
-# Move every action to latest release
-actions-update:
-    GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" pinact run --update
-
-workflow-audit:
-    GITHUB_TOKEN="${GITHUB_TOKEN:-$(gh auth token)}" \
-      zizmor --persona=auditor .github/workflows
-
-lint: actions-check workflow-audit
+# Every lint gate. Needs a running Docker daemon, for docker build --check
+lint:
+    {{ just_executable() }} ci-fresh actions-check workflow-audit actionlint shell-lint reuse-lint
     hadolint Containerfile
     # BuildKit's own linter
     docker build --check -f Containerfile .
-    # Piped with -r so an empty match is a pass
-    git ls-files '*.sh' | xargs -r shellcheck
-    reuse lint
     vendor/bin/phpstan analyse --no-progress
 
-ci: lint test archive token-check scan
+# Every gate. Run before committing
+ci:
+    {{ just_executable() }} lint test archive scan

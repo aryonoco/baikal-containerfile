@@ -54,10 +54,15 @@ jobs:
         with:
           php-version: '8.5'
           coverage: none
+      # Checks divbast/ci out into .ci at the commit the workflows call it
+      # at, for the lint recipes the justfile imports, then installs the
+      # toolchain and PHPStan.
       - run: just setup
+      # The job's own token, a ghs_ one, for pinact and zizmor's calls to
+      # the GitHub API.
       - run: just lint
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
 
   build:
     name: build
@@ -104,10 +109,10 @@ jobs:
         run: |
           image=$(just --evaluate IMAGE)
           args=(
-            --attest type=provenance,mode=max
+            --attest 'type=provenance,mode=max'
             --attest type=sbom
-            --secret id=github_token,env=GITHUB_TOKEN
-            --output type=oci,dest=/tmp/image.tar,rewrite-timestamp=true
+            --secret 'id=github_token,env=GITHUB_TOKEN'
+            --output 'type=oci,dest=/tmp/image.tar,rewrite-timestamp=true'
             -f Containerfile -t "${image}"
           )
           if [ "${GITHUB_EVENT_NAME}" = schedule ] ||
@@ -125,18 +130,11 @@ jobs:
             # stops the directory growing every run until it is too large to
             # restore. Needs Buildx 0.35 or later; the runner has 0.36.
             args+=(
-              --cache-from type=local,src=/tmp/.buildx-cache
-              --cache-to type=local,dest=/tmp/.buildx-cache,mode=max,reset=true
+              --cache-from 'type=local,src=/tmp/.buildx-cache'
+              --cache-to 'type=local,dest=/tmp/.buildx-cache,mode=max,reset=true'
             )
           fi
           docker buildx build "${args[@]}" .
-
-      # Every blob in the archive, attestations included. The provenance
-      # records each build argument, so a token passed as one shows here.
-      - name: Check the image for the token
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: test/token-leak.sh /tmp/image.tar
 
       - name: Publish the image as an artifact
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

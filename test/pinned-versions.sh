@@ -18,16 +18,16 @@ FAILED=0
 # selection lifts a module above its pin whenever something else in the graph
 # requires more, and the build then ships a version no ARG names.
 check() {
-    local what="${1}" expected="${2}" found="${3}"
-    if [[ "${found}" != "${expected}" ]]; then
-        echo "ERROR: the binary has ${what} ${found:-(absent)}, the Containerfile pins ${expected}." >&2
-        FAILED=1
-    fi
+	local what="${1}" expected="${2}" found="${3}"
+	if [[ "${found}" != "${expected}" ]]; then
+		echo "ERROR: the binary has ${what} ${found:-(absent)}, the Containerfile pins ${expected}." >&2
+		FAILED=1
+	fi
 }
 
 # build-info prints one "dep<TAB>module<TAB>version<TAB>sum" line per module.
 dep() {
-    awk -F'\t' -v module="${1}" '$1 == "dep" && $2 == module { print $3 }' <<<"${INFO}"
+	awk -F'\t' -v module="${1}" '$1 == "dep" && $2 == module { print $3 }' <<<"${INFO}"
 }
 
 php=$(grep -oE 'PHP [0-9]+\.[0-9]+\.[0-9]+' <<<"${VERSION}" | cut -d' ' -f2) || true
@@ -45,9 +45,9 @@ check github.com/dunglas/mercure/caddy "${MERCURE_VERSION}" "${mercure}"
 vulcain=$(dep github.com/dunglas/vulcain/caddy)
 check github.com/dunglas/vulcain/caddy "${VULCAIN_VERSION}" "${vulcain}"
 
-if (( FAILED )); then
-    echo "Raise each ARG named above to the version the binary reports, or" >&2
-    echo "find what in the module graph now requires more." >&2
-    exit 1
+if ((FAILED)); then
+	echo "Raise each ARG named above to the version the binary reports, or" >&2
+	echo "find what in the module graph now requires more." >&2
+	exit 1
 fi
 echo "binary matches every pin: PHP ${php}, caddy ${caddy}, cbrotli ${cbrotli}, mercure ${mercure}, vulcain ${vulcain}"
