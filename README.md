@@ -13,11 +13,12 @@ This image runs [FrankenPHP](https://github.com/php/frankenphp): PHP 8.5 and
 Caddy in one binary, on a Debian Trixie-based distroless base. The binary is
 the one [divbast/frankenphp](https://github.com/divbast/frankenphp) builds
 for this image, `ghcr.io/divbast/frankenphp:baikal`, with Baikal's PHP
-extensions and from pinned sources. The Containerfile copies it in by
-digest, and CI builds nothing until it has checked that divbast/frankenphp's
-own build on its `main` attested that digest.
-[Verifying the image](#verifying-the-image) shows how to check the image,
-and the binary in it, yourself.
+extensions, from pinned PHP, Caddy and build tools; the C libraries built
+into it are not pinned, as [Dependency updates](#dependency-updates) says.
+The Containerfile copies it in by digest, and CI builds nothing until it
+has checked that divbast/frankenphp's own build on its `main` attested
+that digest. [Verifying the image](#verifying-the-image) shows how to check
+the image, and the binary in it, yourself.
 
 ## Container Features
 
@@ -298,12 +299,27 @@ or what a credential helper hands it, which GHCR refuses. Point
     mkdir -p /tmp/empty-docker-config
     DOCKER_CONFIG=/tmp/empty-docker-config gh attestation verify oci://ghcr.io/divbast/baikal:latest --repo divbast/baikal-oci-image --signer-workflow divbast/ci/.github/workflows/app-publish.yml --source-ref refs/heads/main
 
-Images published before this repository moved onto divbast/ci's shared
-workflows were signed by its own `build` workflow instead, so the command
-fails for them. Verify one of those with
-`--signer-workflow divbast/baikal-oci-image/.github/workflows/build.yml`.
-Every image published since the move is signed by divbast/ci's
-`app-publish.yml`.
+Which command verifies an image depends on when it was published. The one
+above covers every image published since this repository moved onto
+divbast/ci's shared workflows, which sign with divbast/ci's
+`app-publish.yml`. It fails for the older ones, which each need their own:
+
+- **`0.13.0`, and every other image this repository published before that
+  move**, were signed by its own `build` workflow:
+
+      gh attestation verify oci://ghcr.io/divbast/baikal:0.13.0 --repo divbast/baikal-oci-image --signer-workflow divbast/baikal-oci-image/.github/workflows/build.yml --source-ref refs/heads/main
+
+- **`0.12.1`** was built before this repository moved to the divbast
+  organisation, when it was `aryonoco/baikal-containerfile`, and was
+  published here unchanged. Its attestation names that repository, and gh
+  finds it only under that account, so `--owner` takes the place of
+  `--repo`:
+
+      gh attestation verify oci://ghcr.io/divbast/baikal:0.12.1 --owner aryonoco --signer-workflow aryonoco/baikal-containerfile/.github/workflows/build.yml --source-ref refs/heads/main
+
+`:latest` is whichever image was published last. Each attestation is on
+the index that `:<version>` and `:latest` name, so the per-architecture
+tags, which are not for use, verify with none of these.
 
 **The FrankenPHP binary.** The image's binary is copied from
 `ghcr.io/divbast/frankenphp:baikal`, by the digest the Containerfile's
