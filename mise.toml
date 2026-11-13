@@ -2,8 +2,10 @@
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
 [tools]
-# For divbast/ci's tools, which ci-fresh builds before it checks .ci
+# The acceptance suite, and divbast/ci's tools, which ci-fresh builds
+# before it checks .ci
 "core:go" = "1.27.4"
+"aqua:golangci/golangci-lint" = "2.15.0"
 
 "aqua:hadolint/hadolint" = "2.15.1"
 "aqua:koalaman/shellcheck" = "0.11.0"
