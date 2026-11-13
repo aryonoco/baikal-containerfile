@@ -253,6 +253,24 @@ exporting it, as divbast/ci's README says under
 
 This project was developed with significant LLM involvement. Each git commit contains an `Assisted-by:` tag detailing the particular model/tool used.
 
+## Licences in the image
+
+The image's `org.opencontainers.image.licenses` label is
+`BSD-2-Clause AND GPL-3.0-only AND BSD-3-Clause AND MIT AND OFL-1.1`:
+
+| Licence | What |
+|---|---|
+| BSD-2-Clause | This repository: the Containerfile, the bootstrap, the health probe and endpoint, and the Caddy and PHP configuration |
+| GPL-3.0-only | Baikal itself, as upstream's `composer.json` declares it. Its files ship unchanged, and its `LICENSE`, the GPL v3 text, ships at `/var/www/baikal/LICENSE` |
+| BSD-3-Clause | sabre/dav, sabre/event, sabre/http, sabre/uri, sabre/vobject, sabre/xml and Twig, from the `vendor/` tree Baikal's release ships, each with its `LICENSE` |
+| MIT | psr/log, the Symfony packages and Composer's autoloader in that `vendor/` tree, each with its `LICENSE`; jQuery, in `vendor/` and under `html/res/`; Bootstrap and Font Awesome's CSS under `html/res/`; and the FrankenPHP binary |
+| OFL-1.1 | Font Awesome's web fonts under `html/res/core/FontAwesome/webfonts/` |
+
+Font Awesome's icons are under CC BY 4.0 only as SVG and JavaScript, and
+Baikal's release ships them as neither. PHP, Caddy and the libraries
+built into the FrankenPHP binary, and the distroless base image, are
+other projects' work, and carry their own licences.
+
 ## Licence
 
 Copyright 2026 Aryan Ameri.

@@ -122,13 +122,15 @@ COPY --chown=root:root --chmod=0755 rootfs/usr/local/bin/baikal-bootstrap /usr/l
 COPY --chown=root:root rootfs/usr/local/share/baikal-health /usr/local/share/baikal-health
 COPY --chown=root:root --chmod=0755 rootfs/usr/local/bin/baikal-health /usr/local/bin/baikal-health
 
+# The licences: this repository's, Baikal's, those of the libraries and
+# assets Baikal's release ships in vendor/ and html/res/, and FrankenPHP's.
+# The README's "Licences in the image" says which file carries which.
+ARG BAIKAL_VERSION
 LABEL org.opencontainers.image.source="https://github.com/divbast/baikal-oci-image" \
     org.opencontainers.image.url="https://github.com/divbast/baikal-oci-image" \
-    org.opencontainers.image.documentation="https://github.com/divbast/baikal-oci-image#readme" \
     org.opencontainers.image.title="Baikal" \
-    org.opencontainers.image.description="Hardened Baikal CalDAV/CardDAV server on FrankenPHP and distroless" \
-    org.opencontainers.image.licenses="BSD-2-Clause" \
-    org.opencontainers.image.vendor="Aryan Ameri"
+    org.opencontainers.image.version="${BAIKAL_VERSION}" \
+    org.opencontainers.image.licenses="BSD-2-Clause AND GPL-3.0-only AND BSD-3-Clause AND MIT AND OFL-1.1"
 
 EXPOSE 8080 8081
 # --timeout must clear baikal-health's own budget: it allows each of its two
