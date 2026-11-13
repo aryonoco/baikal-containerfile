@@ -12,7 +12,8 @@ import (
 )
 
 // The images whose volumes this image must serve. Each is history, pinned
-// by digest so it can never move, and no update may ever change either.
+// by digest so it can never move, and no update may ever change either:
+// renovate.json ignores ghcr.io/divbast/baikal.
 const (
 	// previousImage is the last Baikal 0.12.1 image published before the
 	// move to divbast, copied into divbast/baikal byte for byte. Upstream's
