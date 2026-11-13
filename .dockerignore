@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: 2026 Aryan Ameri <github@aryan.ameri.coffee>
 
 
+.ci/
 vendor/
 .agents/
 .superpowers/

@@ -16,27 +16,27 @@ SQLITE="${ROOT}/Core/Frameworks/Flake/Core/Database/Sqlite.php"
 # are upstream's business and may change freely.
 MISSING=0
 need() {
-    local file="${1}" pattern="${2}" what="${3}"
-    if ! grep -Eq -- "${pattern}" "${file}"; then
-        echo "ERROR: ${file#"${ROOT}/"} no longer has ${what}" >&2
-        MISSING=1
-    fi
+	local file="${1}" pattern="${2}" what="${3}"
+	if ! grep -Eq -- "${pattern}" "${file}"; then
+		echo "ERROR: ${file#"${ROOT}/"} no longer has ${what}" >&2
+		MISSING=1
+	fi
 }
 
 need "${UPGRADE}" '^class VersionUpgrade extends \\Flake\\Core\\Controller \{' \
-    'class VersionUpgrade extends \Flake\Core\Controller'
+	'class VersionUpgrade extends \Flake\Core\Controller'
 need "${UPGRADE}" '^    protected function upgrade\(\$databaseConfig, \$sVersionFrom, \$sVersionTo\) \{' \
-    'protected function upgrade($databaseConfig, $sVersionFrom, $sVersionTo)'
+	'protected function upgrade($databaseConfig, $sVersionFrom, $sVersionTo)'
 need "${UPGRADE}" '^    protected \$aSuccess = \[\];' \
-    'protected $aSuccess'
+	'protected $aSuccess'
 need "${UPGRADE}" "\\\$GLOBALS\['DB'\]->getPDO\(\)" \
-    "its connection from \$GLOBALS['DB']->getPDO()"
+	"its connection from \$GLOBALS['DB']->getPDO()"
 need "${SQLITE}" '^    function __construct\(\$sDbPath\) \{' \
-    'function __construct($sDbPath)'
+	'function __construct($sDbPath)'
 
-if (( MISSING )); then
-    echo "Re-read VersionUpgrade::upgrade() and Flake's database classes, then" >&2
-    echo "bring upgradeDatabase() in baikal-bootstrap back in line with them." >&2
-    exit 1
+if ((MISSING)); then
+	echo "Re-read VersionUpgrade::upgrade() and Flake's database classes, then" >&2
+	echo "bring upgradeDatabase() in baikal-bootstrap back in line with them." >&2
+	exit 1
 fi
 echo "upstream upgrade API unchanged"
