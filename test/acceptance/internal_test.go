@@ -21,10 +21,13 @@ const loopbackOrigin = "http://127.0.0.1:8080"
 // how long it is given to. The contract has already seen the app port
 // answer GET /, so this wait, ported from the earlier bash suite (in git
 // history), is kept for its record.
-const (
-	servingWithin = 60 * time.Second
-	servingWhat   = "server answers on " + loopbackOrigin + "/dav.php within 60s"
-)
+const servingWithin = 60 * time.Second
+
+// servingWhat names the record, from servingWithin so the two cannot
+// disagree.
+func servingWhat() string {
+	return "server answers on " + loopbackOrigin + "/dav.php within " + strconv.Itoa(int(servingWithin.Seconds())) + "s"
+}
 
 // internalChecks are checks from inside a container on a network with no
 // route out, ported from the earlier bash suite (in git history). The
@@ -52,7 +55,7 @@ func newInternalChecks() *internalChecks {
 // after them.
 func (ic *internalChecks) run(ctx context.Context, _ *harness.Container, p *harness.Probe) error {
 	ic.err = nil
-	served := harness.Record{What: servingWhat, Expected: "an HTTP status"}
+	served := harness.Record{What: servingWhat(), Expected: "an HTTP status"}
 	resp, err := p.WaitHTTP(ctx, loopbackOrigin+"/dav.php", servingWithin)
 	if err != nil {
 		served.Found = err.Error()
