@@ -11,7 +11,6 @@ parameters:
         - rootfs/usr/local/bin/baikal-bootstrap
         - rootfs/usr/local/bin/baikal-health
         - rootfs/usr/local/share/baikal-health/index.php
-        - test/in-container.php
         - test/probe
 
     # Scanned for definitions, not analysed. test/probe/app.php runs beside
