@@ -60,12 +60,12 @@ const (
 		`<d:set><d:prop><d:resourcetype><d:collection/><c:addressbook/></d:resourcetype></d:prop></d:set></d:mkcol>`
 )
 
-// TestDAV runs the image as a user would, on one volume, through the bash
-// suite's sections 1 to 9, 11, 12 and 13, in their order: a cold start
-// and DAV, a restart of the same container, version drift, a damaged and
-// then a missing database, and the starts the bootstrap refuses. Each
-// phase starts from what the one before it left on the volume, as each of
-// those sections did.
+// TestDAV runs the image as a user would, on one volume, in phases
+// ported from the earlier bash suite (in git history), in its order: a
+// cold start and DAV, a restart of the same container, version drift, a
+// damaged and then a missing database, and the starts the bootstrap
+// refuses. Each phase starts from what the one before it left on the
+// volume.
 //
 //nolint:paralleltest,tparallel // every phase runs on the volume the one before it wrote, so they run in turn
 func TestDAV(t *testing.T) {
@@ -89,10 +89,10 @@ func TestDAV(t *testing.T) {
 	t.Run("refusals", func(t *testing.T) { refusals(t, e, image, volume) })
 }
 
-// coldStart is the bash suite's sections 1 to 9 on s, a first start on an
-// empty volume: the exact 401, the health port from the host, the
-// engine's own health check, and DAV, CalDAV and CardDAV working. The
-// contract's checks cover the rest of those sections, the confinement.
+// coldStart is a first start on an empty volume, on s: the exact 401,
+// the health port from the host, the engine's own health check, and DAV,
+// CalDAV and CardDAV working. The contract's checks cover the
+// confinement.
 func coldStart(t *testing.T, e harness.Engine, image string, s *harness.Serving) {
 	t.Helper()
 	checks := harness.NewChecks(t)

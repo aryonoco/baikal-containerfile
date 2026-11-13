@@ -3,19 +3,22 @@
 
 set shell := ["mise", "exec", "--", "bash", "-euo", "pipefail", "-c"]
 
+# What divbast/ci's app recipes act on: the engine, the image the build
+# writes and the acceptance suite runs, where archive writes it and scan
+# reads it, and the published image scan compares it with. IMAGE is a
+# plain value, as ci's README has every app write it, so the environment
+# cannot change it: `just IMAGE=<image> acceptance` tests another image.
 ENGINE := env_var_or_default("ENGINE", "docker")
 IMAGE := "localhost/baikal:dev"
 ARCHIVE := env_var_or_default("ARCHIVE", "/tmp/baikal-image.tar")
-LAYOUT := ARCHIVE + ".layout"
-REPORT := ARCHIVE + ".report.json"
-SARIF := ARCHIVE + ".sarif"
 PUBLISHED := env_var_or_default("PUBLISHED", "ghcr.io/divbast/baikal:latest")
-BASELINE := ARCHIVE + ".published.json"
 
-# The lint recipes, and _github-token, come from divbast/ci's common.just.
-# Each is run from a recipe's body, never named as a dependency, so
-# `just setup` still runs before .ci exists.
+# build, acceptance, test, archive, scan and app-lint come from divbast/ci's
+# app.just, and the other lint recipes from its common.just. Each is run
+# from a recipe's body, never named as a dependency, so `just setup` still
+# runs before .ci exists.
 import? '.ci/just/common.just'
+import? '.ci/just/app.just'
 
 # Tool versions live in mise.toml
 
@@ -54,45 +57,9 @@ ci-checkout:
     git -C .ci fetch -q --depth 1 https://github.com/divbast/ci "${sha}"
     git -C .ci checkout -q FETCH_HEAD && rm -rf .ci/bin
 
-# Build the image locally
-build:
-    # GITHUB_TOKEN reaches spc as a build secret, not a build argument, so
-    # its GitHub API calls escape the unauthenticated rate limit. It is
-    # refused unless it is a fine-grained token or CI's job token. Docker
-    # only auto-discovers `Dockerfile`.
-    {{ just_executable() }} _github-token
-    {{ ENGINE }} build --secret id=github_token,env=GITHUB_TOKEN -f Containerfile -t {{ IMAGE }} .
-
-acceptance:
-    ENGINE={{ ENGINE }} IMAGE={{ IMAGE }} ./test/acceptance.sh
-
-# The Go acceptance suite, which runs beside the bash one above until it
-# replaces it: app.just's acceptance line, since app.just cannot be
-# imported while this file keeps its own build and scan. It names .ci
-# where app.just has common.just's ci_dir, which is undefined until .ci
-# is checked out, and this file must parse before then for just setup.
-go-acceptance:
-    [ -x .ci/bin/divbast-testcount ] || {{ just_executable() }} ci-tools
-    set -o pipefail; ENGINE={{ ENGINE }} IMAGE={{ IMAGE }} go test -json -count=1 -timeout 90m ./test/acceptance/... | .ci/bin/divbast-testcount
-
-# Build the image, then run the acceptance suite against it
-test: build acceptance
-
-# Write the image
-archive:
-    {{ ENGINE }} image save -o {{ ARCHIVE }} {{ IMAGE }}
-
-# Fail on any HIGH or CRITICAL vulnerability the published image does not have
-scan:
-    rm -rf {{ LAYOUT }} && mkdir {{ LAYOUT }} && tar xf {{ ARCHIVE }} -C {{ LAYOUT }}
-    ./test/scan.sh {{ LAYOUT }} {{ REPORT }} {{ PUBLISHED }} {{ BASELINE }} {{ SARIF }}
-
 # Every lint gate. Needs a running Docker daemon, for docker build --check
 lint:
-    {{ just_executable() }} ci-fresh actions-check workflow-audit actionlint shell-lint go-lint go-test reuse-lint
-    hadolint Containerfile
-    # BuildKit's own linter
-    docker build --check -f Containerfile .
+    {{ just_executable() }} ci-fresh actions-check workflow-audit actionlint shell-lint go-lint go-test reuse-lint app-lint
     vendor/bin/phpstan analyse --no-progress
 
 # Every gate. Run before committing

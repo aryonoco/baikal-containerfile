@@ -6,12 +6,12 @@
 declare(strict_types=1);
 
 /*
- * What the image's own PHP borrows from the Baikal tree. Four files need it:
+ * What the image's own PHP borrows from the Baikal tree. Three files need it:
  * rootfs/usr/local/bin/baikal-bootstrap uses both Yaml methods,
  * BAIKAL_VERSION, Flake's Sqlite database and VersionUpgrade;
  * rootfs/usr/local/share/baikal-health/index.php uses Yaml::parseFile; and
- * test/in-container.php and test/probe/app.php use BAIKAL_VERSION. Trimming
- * this to what one of them needs breaks the others.
+ * test/probe/app.php uses BAIKAL_VERSION. Trimming this to what one of them
+ * needs breaks the others.
  */
 
 namespace Flake\Core\Database {

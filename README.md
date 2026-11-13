@@ -9,8 +9,16 @@ Published as `ghcr.io/divbast/baikal`.
 
 ## Base
 
-This image runs [FrankenPHP](https://github.com/php/frankenphp): PHP 8.5 and Caddy
-in a single mostly-static binary on a Debian Trixie-based distroless base.
+This image runs [FrankenPHP](https://github.com/php/frankenphp): PHP 8.5 and
+Caddy in one binary, on a Debian Trixie-based distroless base. The binary is
+the one [divbast/frankenphp](https://github.com/divbast/frankenphp) builds
+for this image, `ghcr.io/divbast/frankenphp:baikal`, with Baikal's PHP
+extensions, from pinned PHP, Caddy and build tools; the C libraries built
+into it are not pinned, as [Dependency updates](#dependency-updates) says.
+The Containerfile copies it in by digest, and CI builds nothing until it
+has checked that divbast/frankenphp's own build on its `main` attested
+that digest. [Verifying the image](#verifying-the-image) shows how to check
+the image, and the binary in it, yourself.
 
 ## Container Features
 
@@ -40,6 +48,10 @@ podman run -d --name baikal \
   -e BAIKAL_ADMIN_PASSWORD=... \
   ghcr.io/divbast/baikal:0.13.0
 ```
+
+`:0.13.0` names the Baikal version, and `:latest` the newest image. Each
+new image of a version moves that version's tag. The `:<version>-<arch>`
+and `:<version>-staging` tags are the publish's working tags, not for use.
 
 ## Request size and `/tmp`
 
@@ -176,11 +188,22 @@ and back up before you move the tag.
 
 ## Dependency updates
 
-Every input the Containerfile names is pinned: the builder and runtime images
-by digest, Baikal by version and checksum, and PHP, Caddy, its plugins and
-static-php-cli by version or commit. The C libraries static-php-cli builds
-into FrankenPHP are not: it still takes openssl, zlib and others from their
-newest release whenever the image is built.
+Every input the Containerfile names is pinned: the fetch stage's Debian
+image and the distroless runtime by digest, the FrankenPHP binary by the
+digest of `ghcr.io/divbast/frankenphp:baikal`, and Baikal by version and
+checksum. Three packages the fetch stage installs are not: `curl`, `unzip`
+and `ca-certificates`, with what they depend on, come from Debian's archive
+as it stands on the day of the build. They only fetch Baikal's release and
+unpack it; the image takes nothing from that stage but Baikal's own files.
+
+The binary's own inputs, PHP, Caddy, its plugins, xcaddy and
+static-php-cli, are pinned in divbast/frankenphp, which also fails its
+build unless the binary loads exactly the PHP extensions this image needs.
+The C libraries static-php-cli builds into it are not pinned there:
+openssl, zlib and several others come from their newest release whenever
+the binary is built. So a new `:baikal` digest can carry newer C code with
+no pin moved, and that is how fixes to those libraries arrive.
+
 A pin only moves through a pull request, and
 [Renovate](https://docs.renovatebot.com/) opens those. It runs every morning,
 after every merge to `main`, whenever CI finishes on one of its branches and
@@ -188,16 +211,24 @@ when the Dependency Dashboard issue is edited, from
 `.github/workflows/renovate.yml`, which calls divbast/ci's shared Renovate
 workflow, as the divbast org's `divbast-renovate` GitHub App, and reports on
 the Dependency Dashboard issue. Its settings are divbast/renovate-config's
-shared presets, and `renovate.json` adds Baikal's release manager and the
-pins of the FrankenPHP build. A new Baikal release arrives with its checksum
-already computed.
+shared presets, and `renovate.json` adds only Baikal's release manager. The
+pull requests Renovate opens here are:
+
+- A Baikal release arrives as one pull request that moves the version and
+  the checksum together, the checksum already computed from the release's
+  own archive.
+- A new `:baikal` binary arrives as a pull request that moves the digest,
+  and CI verifies the new digest's attestation before it builds.
+- A release of divbast/ci arrives as one pull request that moves every
+  workflow's pin of it together.
 
 Renovate merges its own pull requests once every check on one has passed,
 majors and Baikal releases included, while the repository variable
-`BAIKAL_AUTOMERGE` is `enabled`. A new major version of divbast/ci first
-waits for someone to approve it on the Dependency Dashboard. Any other value
-of the variable, or none, stops merging from the next run, and Renovate goes
-on opening and rebasing pull requests for a person to merge:
+`BAIKAL_AUTOMERGE` is `enabled`. Two kinds first wait for someone to
+approve them on the Dependency Dashboard: a new major version of
+divbast/ci, and a raise of `go.mod`'s `go` line. Any other value of the
+variable, or none, stops merging from the next run, and Renovate goes on
+opening and rebasing pull requests for a person to merge:
 
     gh variable set BAIKAL_AUTOMERGE --body disabled
 
@@ -209,7 +240,16 @@ squash, which GitHub signs, because `main` accepts only signed commits.
 run publishes `main` if anything merged since the last image, so however many
 updates land in a day, users see one new image at most. An urgent fix need not
 wait: a manual run of the `build` workflow from `main` (Actions, build, Run
-workflow) publishes at once.
+workflow) publishes at once. Neither ever replaces `:latest` with an image of
+an older commit.
+
+A publish pushes each architecture, merges them into an index under
+`:<version>-staging`, attests it and verifies the attestation, and only then
+moves `:<version>` and `:latest`, before checking both as an anonymous client
+pulls them. If the attestation or its verification fails, `:<version>` and
+`:latest` stay where they were. Re-running the failed job then publishes,
+as long as the image artifacts the check built are kept, which is a day;
+after that the next daily run or a manual run does.
 
 A daily stall check, `.github/workflows/stall.yml`, which calls divbast/ci's
 shared one, fails, and GitHub emails you, when a Renovate pull request has
@@ -237,16 +277,79 @@ managed there: they are set up by hand. A fork needs its own App:
 4. When you are ready for Renovate to merge on its own, run
    `gh variable set BAIKAL_AUTOMERGE --body enabled`.
 
+## Verifying the image
+
+Every image published from `main` carries an attestation of where it was
+built, signed with Sigstore. With [gh](https://cli.github.com/) 2.102.0 or
+newer:
+
+    gh attestation verify oci://ghcr.io/divbast/baikal:latest --repo divbast/baikal-oci-image --signer-workflow divbast/ci/.github/workflows/app-publish.yml --source-ref refs/heads/main
+
+`--repo` and `--source-ref` say the image was built from this repository's
+`main` branch, and `--signer-workflow` that divbast/ci's publish workflow,
+which this repository's `build` workflow calls, signed it. Older versions of
+gh compare `--signer-workflow` with only the start of the signer's identity,
+and `--source-ref` without regard to case.
+
+If gh reports that its token was denied, for an image anyone may pull, it
+is sending a registry login from Docker's configuration, such as a stale one
+or what a credential helper hands it, which GHCR refuses. Point
+`DOCKER_CONFIG` at an empty directory:
+
+    mkdir -p /tmp/empty-docker-config
+    DOCKER_CONFIG=/tmp/empty-docker-config gh attestation verify oci://ghcr.io/divbast/baikal:latest --repo divbast/baikal-oci-image --signer-workflow divbast/ci/.github/workflows/app-publish.yml --source-ref refs/heads/main
+
+Which command verifies an image depends on when it was published. The one
+above covers every image published since this repository moved onto
+divbast/ci's shared workflows, which sign with divbast/ci's
+`app-publish.yml`. It fails for the older ones, which each need their own:
+
+- **`0.13.0`, and every other image this repository published before that
+  move**, were signed by its own `build` workflow:
+
+      gh attestation verify oci://ghcr.io/divbast/baikal:0.13.0 --repo divbast/baikal-oci-image --signer-workflow divbast/baikal-oci-image/.github/workflows/build.yml --source-ref refs/heads/main
+
+- **`0.12.1`** was built before this repository moved to the divbast
+  organisation, when it was `aryonoco/baikal-containerfile`, and was
+  published here unchanged. Its attestation names that repository, and gh
+  finds it only under that account, so `--owner` takes the place of
+  `--repo`:
+
+      gh attestation verify oci://ghcr.io/divbast/baikal:0.12.1 --owner aryonoco --signer-workflow aryonoco/baikal-containerfile/.github/workflows/build.yml --source-ref refs/heads/main
+
+`:latest` is whichever image was published last. Each attestation is on
+the index that `:<version>` and `:latest` name, so the per-architecture
+tags, which are not for use, verify with none of these.
+
+**The FrankenPHP binary.** The image's binary is copied from
+`ghcr.io/divbast/frankenphp:baikal`, by the digest the Containerfile's
+`COPY --from=` names. Take that digest from the Containerfile at the commit
+the image was built from, its `org.opencontainers.image.revision`:
+
+    grep -o 'frankenphp:baikal@sha256:[0-9a-f]*' Containerfile
+
+and, with `<digest>` standing for its `sha256:…` part, check that
+divbast/frankenphp's own build on its `main` branch made it:
+
+    gh attestation verify oci://ghcr.io/divbast/frankenphp@<digest> --repo divbast/frankenphp --signer-workflow divbast/frankenphp/.github/workflows/build.yml@refs/heads/main --source-ref refs/heads/main
+
+CI runs the same check before it builds anything, so a binary that fails it
+never reaches an image built here.
+
 ## Building it yourself
 
 With [mise](https://mise.jdx.dev/), Composer and Docker: `just setup` checks
 divbast/ci out into `.ci/` at the commit the workflows pin and installs the
 toolchain, and `just ci` runs every gate, the image build included. The
-build and the lint gates that call GitHub read a token from `GITHUB_TOKEN`
-and nowhere else, and refuse anything but a fine-grained personal access
-token (`github_pat_`) or the job token CI passes (`ghs_`). One limited to
-reading public repositories is enough. Pass it per command rather than
-exporting it, as divbast/ci's README says under
+build itself needs no token, and, unlike CI, does not verify the FrankenPHP
+binary's attestation: it builds from whatever digest the Containerfile
+names. `just scan` reads the published image with
+[skopeo](https://github.com/containers/skopeo), which must be on `PATH`.
+The lint gates that call GitHub read a token from `GITHUB_TOKEN` and
+nowhere else, and refuse anything but a fine-grained personal access token
+(`github_pat_`) or the job token CI passes (`ghs_`). One limited to reading
+public repositories is enough. Pass it per command rather than exporting
+it, as divbast/ci's README says under
 [Local GitHub token](https://github.com/divbast/ci#local-github-token).
 
 ## AI/LLM Disclosure
@@ -268,9 +371,9 @@ The image's `org.opencontainers.image.licenses` label is
 
 Font Awesome's icons are under CC BY 4.0 only as SVG and JavaScript, and
 Baikal's release ships them as neither: the one `.svg` in the image is
-Open Iconic's font. PHP, Caddy and the libraries
-built into the FrankenPHP binary, and the distroless base image, are
-other projects' work, and carry their own licences.
+Open Iconic's font. PHP, Caddy and the libraries built into the
+FrankenPHP binary divbast/frankenphp builds, and the distroless base
+image, are other projects' work, and carry their own licences.
 
 ## Licence
 

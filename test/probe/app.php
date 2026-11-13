@@ -12,12 +12,12 @@ declare(strict_types=1);
  *
  *     frankenphp php-cli core.php <subcommand> [arguments]
  *
- * Each asserts what it did, or what it found, in core.php's records, under
- * the names the bash suite's in-container.php gave them. core.php hands
- * every app subcommand whatever operands it was given, so each checks its
- * own count, and one given the wrong number throws, which core.php records
- * as a failure. Each may use what core.php defines: its Assertions and
- * readOrThrow().
+ * Each asserts what it did, or what it found, in core.php's records,
+ * under the record names the earlier bash suite (in git history) gave
+ * them, where it had the check. core.php hands every app subcommand
+ * whatever operands it was given, so each checks its own count, and one
+ * given the wrong number throws, which core.php records as a failure.
+ * Each may use what core.php defines: its Assertions and readOrThrow().
  *
  * The upgrade tests run seed-user and seed-share inside the images
  * published before this suite existed, so this file, and core.php, must
@@ -289,6 +289,21 @@ final class BaikalProbe
     }
 
     /**
+     * Asserts PHP here opens no URL stream: allow_url_fopen is off, so
+     * fopen() and file_get_contents() refuse an http:// or ftp:// URL.
+     * php-cli reads the same /etc/frankenphp/php.d as the server, so the
+     * setting found here is the one the server runs with.
+     *
+     * @param list<string> $operands
+     */
+    public static function assertIni(array $operands): void
+    {
+        self::operands('assert-ini', $operands);
+
+        Assertions::equals('allow_url_fopen is off', 'off', self::onOff('allow_url_fopen'));
+    }
+
+    /**
      * The operands a subcommand was given, when they are exactly as many
      * as the arguments it names; anything else throws.
      *
@@ -307,6 +322,23 @@ final class BaikalProbe
         }
 
         return $operands;
+    }
+
+    /**
+     * A boolean ini directive as on or off, as PHP itself reads one: On,
+     * Yes, True and any non-zero number are on.
+     */
+    private static function onOff(string $directive): string
+    {
+        $value = ini_get($directive);
+        if ($value === false) {
+            throw new RuntimeException("PHP has no $directive setting");
+        }
+        $value = strtolower(trim($value));
+
+        $on = in_array($value, ['on', 'yes', 'true'], true) || (int) $value !== 0;
+
+        return $on ? 'on' : 'off';
     }
 
     /**
@@ -527,4 +559,5 @@ return [
     'assert-share' => BaikalProbe::assertShare(...),
     'assert-current-version' => BaikalProbe::assertCurrentVersion(...),
     'assert-schema' => BaikalProbe::assertSchema(...),
+    'assert-ini' => BaikalProbe::assertIni(...),
 ];

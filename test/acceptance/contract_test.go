@@ -35,9 +35,9 @@ var healthCmd = []string{harness.FrankenPHP, "php-cli", "/usr/local/bin/baikal-h
 // TestContract runs divbast's confinement contract against the image, on a
 // network with no route out: no capability, a read-only root, uid 65532,
 // the server as PID 1, no shell, two listeners, no egress, the HEALTHCHECK
-// and the health port. Its container also gets the bash suite's section
-// 10, which asks DAV from inside that network: Baikal serves there, so
-// egress refused there is the refusal of a server that works.
+// and the health port. Its container also gets the internal checks,
+// which ask DAV from inside that network: Baikal serves there, so egress
+// refused there is the refusal of a server that works.
 func TestContract(t *testing.T) {
 	t.Parallel()
 	e, image := underTest(t)

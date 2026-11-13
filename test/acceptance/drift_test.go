@@ -15,15 +15,15 @@ import (
 // upgrades from.
 const driftedFrom = "0.10.1"
 
-// driftFrom is the first half of the bash suite's section 12, run on the
-// restarted container: it records driftedFrom as the version /data was
-// made by, as an older image would have left it.
+// driftFrom is the first half of version drift, run on the restarted
+// container: it records driftedFrom as the version /data was made by, as
+// an older image would have left it.
 func driftFrom(t *testing.T, s *harness.Serving) {
 	t.Helper()
 	harness.RunRecords(t, s.Probe, "set-version", driftedFrom)
 }
 
-// upgraded is the second half of section 12, on a new container started
+// upgraded is the second half of version drift, on a new container started
 // on the drifted volume: the bootstrap runs Baikal's own upgrade, and the
 // server answers exactly 401, never the 302 to the install wizard, with
 // the event still there.
