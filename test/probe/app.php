@@ -12,12 +12,12 @@ declare(strict_types=1);
  *
  *     frankenphp php-cli core.php <subcommand> [arguments]
  *
- * Each asserts what it did, or what it found, in core.php's records, under
- * the names the bash suite's in-container.php gave them. core.php hands
- * every app subcommand whatever operands it was given, so each checks its
- * own count, and one given the wrong number throws, which core.php records
- * as a failure. Each may use what core.php defines: its Assertions and
- * readOrThrow().
+ * Each asserts what it did, or what it found, in core.php's records,
+ * under the record names the earlier bash suite (in git history) gave
+ * them, where it had the check. core.php hands every app subcommand
+ * whatever operands it was given, so each checks its own count, and one
+ * given the wrong number throws, which core.php records as a failure.
+ * Each may use what core.php defines: its Assertions and readOrThrow().
  *
  * The upgrade tests run seed-user and seed-share inside the images
  * published before this suite existed, so this file, and core.php, must

@@ -19,17 +19,19 @@ const loopbackOrigin = "http://127.0.0.1:8080"
 
 // The record that says the server answers from inside the container, and
 // how long it is given to. The contract has already seen the app port
-// answer GET /, so this is the bash suite's own wait, kept for its record.
+// answer GET /, so this wait, ported from the earlier bash suite (in git
+// history), is kept for its record.
 const (
 	servingWithin = 60 * time.Second
 	servingWhat   = "server answers on " + loopbackOrigin + "/dav.php within 60s"
 )
 
-// internalChecks are the checks the bash suite made from inside a
-// container on a network with no route out. The contract's own container
-// is on such a network, so they run there, from its ReadyProbe, once both
-// ports answer, and are reported after the contract's checks. records is
-// what they found, and err why they stopped, if they did.
+// internalChecks are checks from inside a container on a network with no
+// route out, ported from the earlier bash suite (in git history). The
+// contract's own container is on such a network, so they run there, from
+// its ReadyProbe, once both ports answer, and are reported after the
+// contract's checks. records is what they found, and err why they stopped,
+// if they did.
 type internalChecks struct {
 	records []harness.Record
 	err     error

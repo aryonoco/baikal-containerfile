@@ -36,10 +36,11 @@ const (
 )
 
 // olderSpec is how an image published before this one is run to make the
-// data this one must serve: as the bash suite ran it, under the contract
-// with the admin password and volume at /data, and only the app port
-// published. The probe goes in too, since its subcommands write what DAV
-// cannot, so the probe and its app.php must load in that image's PHP.
+// data this one must serve: as the earlier bash suite (in git history)
+// ran it, under the contract with the admin password and volume at /data,
+// and only the app port published. The probe goes in too, since its
+// subcommands write what DAV cannot, so the probe and its app.php must
+// load in that image's PHP.
 func olderSpec(image, volume string) *harness.ServeSpec {
 	return &harness.ServeSpec{
 		Run: harness.RunSpec{
@@ -54,10 +55,10 @@ func olderSpec(image, volume string) *harness.ServeSpec {
 	}
 }
 
-// TestUpgradeFromPrevious is the bash suite's section 14: data the 0.12.1
-// image made, through DAV and in the shape older schemas allowed, comes
-// through this image's upgrade whole, into a database indistinguishable
-// from a fresh install's.
+// TestUpgradeFromPrevious checks that data the 0.12.1 image made, through
+// DAV and in the shape older schemas allowed, comes through this image's
+// upgrade whole, into a database indistinguishable from a fresh
+// install's.
 //
 //nolint:paralleltest,tparallel // this image serves the volume the previous image wrote, once that one is gone
 func TestUpgradeFromPrevious(t *testing.T) {

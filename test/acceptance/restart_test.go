@@ -10,10 +10,10 @@ import (
 	"github.com/divbast/ci/harness"
 )
 
-// warmRestart is the bash suite's section 11: the container restarted in
-// place, as docker restart or systemd restarts it, comes back serving the
-// data it had. A restart empties /tmp, Caddy's state and the probe with
-// it, so the bootstrap must start again from /data alone, and not refuse.
+// warmRestart checks that the container, restarted in place, as docker
+// restart or systemd restarts it, comes back serving the data it had. A
+// restart empties /tmp, Caddy's state and the probe with it, so the
+// bootstrap must start again from /data alone, and not refuse.
 // [harness.Serving.Restart] reads the ports again, since Docker binds
 // others, and installs the probe again.
 func warmRestart(t *testing.T, s *harness.Serving) {
