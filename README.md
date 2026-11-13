@@ -304,10 +304,14 @@ above covers every image published since this repository moved onto
 divbast/ci's shared workflows, which sign with divbast/ci's
 `app-publish.yml`. It fails for the older ones, which each need their own:
 
-- **`0.13.0`, and every other image this repository published before that
-  move**, were signed by its own `build` workflow:
+- **Every image this repository published before that move**, `0.13.0`
+  among them, was signed by its own `build` workflow. Tags move to newer
+  images, and the move itself did that to `:0.13.0` and `:latest`, so a
+  tag no longer names the image it did. Verify the digest you run, which
+  is the only name an older image keeps. For example, the last
+  `:latest` and `:0.13.0` published before the move:
 
-      gh attestation verify oci://ghcr.io/divbast/baikal:0.13.0 --repo divbast/baikal-oci-image --signer-workflow divbast/baikal-oci-image/.github/workflows/build.yml --source-ref refs/heads/main
+      gh attestation verify oci://ghcr.io/divbast/baikal@sha256:8f2bbc028ddcc1546f8b6a8aabd8fec1e8ddeb4be1350de9995b43aa441f4335 --repo divbast/baikal-oci-image --signer-workflow divbast/baikal-oci-image/.github/workflows/build.yml --source-ref refs/heads/main
 
 - **`0.12.1`** was built before this repository moved to the divbast
   organisation, when it was `aryonoco/baikal-containerfile`, and was
