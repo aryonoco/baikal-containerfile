@@ -20,8 +20,9 @@ in a single mostly-static binary on a Debian Trixie-based distroless base.
 | Root filesystem | read-only |
 | User | uid/gid 65532 (`nonroot`) |
 | Port | 8080 (DAV), 8081 (health, do not publish) |
-| tmpfs required | `/tmp` |
+| tmpfs required | `/tmp`, sized `512m` |
 | Volume required | `/data` |
+| Request body | 64 MB at most; a larger one gets 413 |
 | Shell in image | none |
 | Package manager | none |
 | Outbound network | none |
@@ -33,12 +34,26 @@ in a single mostly-static binary on a Debian Trixie-based distroless base.
 podman run -d --name baikal \
   --cap-drop ALL --read-only \
   --user 65532:65532 \
-  --tmpfs /tmp \
+  --tmpfs /tmp:size=512m \
   -v baikal-data:/data \
   -p 8080:8080 \
   -e BAIKAL_ADMIN_PASSWORD=... \
   ghcr.io/divbast/baikal:0.13.0
 ```
+
+## Request size and `/tmp`
+
+Caddy refuses a request body over 64 MB with 413. One whose
+`Content-Length` says it is too big is refused before PHP reads any of it,
+and one sent chunked is cut off at the cap and refused the same way. A
+contact with a photo, or an event with attachments, is far below it.
+
+The cap is there for `/tmp`. PHP keeps 16 KiB of a request body in memory
+and spools the rest to `/tmp`, where a body takes about twice its size
+while it is handled. `size=512m` is eight times the cap: room for four of
+the largest uploads at once, beside Caddy's own state. A tmpfs size is a
+ceiling, not memory set aside: it takes only what is written to it. A
+reverse proxy in front applies its own limit as well.
 
 ## Health
 
@@ -55,12 +70,21 @@ Podman's inspection path never looks at the config's healthcheck field —
 healthcheck is in the image config; a Podman user has to pass it explicitly:
 
 ```bash
-podman run -d --health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]' ghcr.io/divbast/baikal:0.13.0
+podman run -d --name baikal \
+  --cap-drop ALL --read-only \
+  --user 65532:65532 \
+  --tmpfs /tmp:size=512m \
+  -v baikal-data:/data \
+  -p 8080:8080 \
+  -e BAIKAL_ADMIN_PASSWORD=... \
+  --health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]' \
+  ghcr.io/divbast/baikal:0.13.0
 ```
 
-Under a Quadlet, the equivalent is:
+Under a Quadlet, the equivalents of the tmpfs and the health check are:
 
 ```
+Tmpfs=/tmp:size=512m
 HealthCmd=["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]
 ```
 
@@ -76,7 +100,9 @@ wants the probe declared in the pod spec instead.
 | `/usr/local/bin/baikal-health` | The in-container probe `HEALTHCHECK` runs. Asserts `/healthz` is 200 **and** `/dav.php` is exactly 401 |
 | `http://127.0.0.1:8081/healthz` | 200 `ok`, or 503 naming the failed check. Verifies the config parses, is writable and carries a `configured_version`, and that the database opens with its schema present |
 
-Port 8081 serves nothing else and is meant to stay unpublished.
+Port 8081 serves nothing else and is meant to stay unpublished. It is the
+only place `/healthz` answers: on 8080 it is 404, so a health check whose
+port is mistyped as 8080 fails rather than reporting a false healthy.
 
 There is no shell in this image, so a health command given as a plain string —
 which Docker and Podman both run through `/bin/sh -c` — can never pass. An
@@ -97,13 +123,9 @@ Prefer that to an `httpGet` probe against `/healthz`. `httpGet` reaches a
 `containerPort` directly and so needs no publishing, but it cannot express the
 exact 401, and `/healthz` on its own is only half of what healthy means here.
 
-Two answers that look like defects and are not:
-
-- **A full `/data` passes every check.** `is_writable()` tests permission, not
-  free space, and the 401 never touches the disk
-- **`http://host:8080/healthz` returns 200 — from Baikal's own front
-  controller**, not from the health endpoint, so a one-digit typo in the port
-  reports a false healthy. The health endpoint is only ever on 8081
+One answer that looks like a defect and is not: **a full `/data` passes
+every check.** `is_writable()` tests permission, not free space, and the 401
+never touches the disk.
 
 There is no shell and no access log on `:8081`, so the name of the failed check
 is read back off the engine:

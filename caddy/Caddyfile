@@ -21,9 +21,24 @@
 :8080 {
 	root /var/www/baikal/html
 
+	# The largest request body served, refused with 413 above it. PHP keeps
+	# 16 KiB of a body in memory and spools the rest to /tmp, where a body
+	# takes about twice its size while it is handled, so this is what keeps
+	# uploads from filling /tmp: the README sizes it at eight times this.
+	# A body whose Content-Length is over the cap is refused before PHP
+	# reads any of it, and one sent chunked is cut off at the cap.
+	request_body {
+		max_size 64MB
+	}
+
 	# RFC 6764 discovery
 	redir /.well-known/caldav /dav.php/ 301
 	redir /.well-known/carddav /dav.php/ 301
+
+	# Health answers on :8081 alone. Here /healthz would reach Baikal's
+	# front controller, which answers 200, so a port mistyped as 8080 would
+	# read as healthy.
+	respond /healthz 404
 
 	php_server
 
