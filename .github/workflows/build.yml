@@ -223,10 +223,22 @@ jobs:
           "${ENGINE}" image inspect "${image}" >/dev/null
           "${ENGINE}" --version
 
+      # divbast/ci at the commit the workflows pin, for the Go suite's
+      # harness and contract
+      - run: just ci-checkout
+
       - name: Acceptance suite
         env:
           ENGINE: ${{ matrix.engine }}
         run: just acceptance
+
+      # The Go suite, beside the bash one until it replaces it. It runs
+      # whether or not the bash suite passed, so every run shows both.
+      - name: Go acceptance suite
+        if: ${{ !cancelled() }}
+        env:
+          ENGINE: ${{ matrix.engine }}
+        run: just go-acceptance
 
   scan:
     name: scan

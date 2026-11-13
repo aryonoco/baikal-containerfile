@@ -20,8 +20,9 @@ in a single mostly-static binary on a Debian Trixie-based distroless base.
 | Root filesystem | read-only |
 | User | uid/gid 65532 (`nonroot`) |
 | Port | 8080 (DAV), 8081 (health, do not publish) |
-| tmpfs required | `/tmp` |
+| tmpfs required | `/tmp`, sized `512m` |
 | Volume required | `/data` |
+| Request body | 64 MB at most; a larger one gets 413 |
 | Shell in image | none |
 | Package manager | none |
 | Outbound network | none |
@@ -33,12 +34,26 @@ in a single mostly-static binary on a Debian Trixie-based distroless base.
 podman run -d --name baikal \
   --cap-drop ALL --read-only \
   --user 65532:65532 \
-  --tmpfs /tmp \
+  --tmpfs /tmp:size=512m \
   -v baikal-data:/data \
   -p 8080:8080 \
   -e BAIKAL_ADMIN_PASSWORD=... \
   ghcr.io/divbast/baikal:0.13.0
 ```
+
+## Request size and `/tmp`
+
+Caddy refuses a request body over 64 MB with 413. One whose
+`Content-Length` says it is too big is refused before PHP reads any of it,
+and one sent chunked is cut off at the cap and refused the same way. A
+contact with a photo, or an event with attachments, is far below it.
+
+The cap is there for `/tmp`. PHP keeps 16 KiB of a request body in memory
+and spools the rest to `/tmp`, where a body takes about twice its size
+while it is handled. `size=512m` is eight times the cap: room for four of
+the largest uploads at once, beside Caddy's own state. A tmpfs size is a
+ceiling, not memory set aside: it takes only what is written to it. A
+reverse proxy in front applies its own limit as well.
 
 ## Health
 
@@ -55,12 +70,21 @@ Podman's inspection path never looks at the config's healthcheck field —
 healthcheck is in the image config; a Podman user has to pass it explicitly:
 
 ```bash
-podman run -d --health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]' ghcr.io/divbast/baikal:0.13.0
+podman run -d --name baikal \
+  --cap-drop ALL --read-only \
+  --user 65532:65532 \
+  --tmpfs /tmp:size=512m \
+  -v baikal-data:/data \
+  -p 8080:8080 \
+  -e BAIKAL_ADMIN_PASSWORD=... \
+  --health-cmd '["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]' \
+  ghcr.io/divbast/baikal:0.13.0
 ```
 
-Under a Quadlet, the equivalent is:
+Under a Quadlet, the equivalents of the tmpfs and the health check are:
 
 ```
+Tmpfs=/tmp:size=512m
 HealthCmd=["/usr/local/bin/frankenphp","php-cli","/usr/local/bin/baikal-health"]
 ```
 
@@ -76,7 +100,9 @@ wants the probe declared in the pod spec instead.
 | `/usr/local/bin/baikal-health` | The in-container probe `HEALTHCHECK` runs. Asserts `/healthz` is 200 **and** `/dav.php` is exactly 401 |
 | `http://127.0.0.1:8081/healthz` | 200 `ok`, or 503 naming the failed check. Verifies the config parses, is writable and carries a `configured_version`, and that the database opens with its schema present |
 
-Port 8081 serves nothing else and is meant to stay unpublished.
+Port 8081 serves nothing else and is meant to stay unpublished. It is the
+only place `/healthz` answers: on 8080 it is 404, so a health check whose
+port is mistyped as 8080 fails rather than reporting a false healthy.
 
 There is no shell in this image, so a health command given as a plain string —
 which Docker and Podman both run through `/bin/sh -c` — can never pass. An
@@ -97,13 +123,9 @@ Prefer that to an `httpGet` probe against `/healthz`. `httpGet` reaches a
 `containerPort` directly and so needs no publishing, but it cannot express the
 exact 401, and `/healthz` on its own is only half of what healthy means here.
 
-Two answers that look like defects and are not:
-
-- **A full `/data` passes every check.** `is_writable()` tests permission, not
-  free space, and the 401 never touches the disk
-- **`http://host:8080/healthz` returns 200 — from Baikal's own front
-  controller**, not from the health endpoint, so a one-digit typo in the port
-  reports a false healthy. The health endpoint is only ever on 8081
+One answer that looks like a defect and is not: **a full `/data` passes
+every check.** `is_writable()` tests permission, not free space, and the 401
+never touches the disk.
 
 There is no shell and no access log on `:8081`, so the name of the failed check
 is read back off the engine:
@@ -230,6 +252,25 @@ exporting it, as divbast/ci's README says under
 ## AI/LLM Disclosure
 
 This project was developed with significant LLM involvement. Each git commit contains an `Assisted-by:` tag detailing the particular model/tool used.
+
+## Licences in the image
+
+The image's `org.opencontainers.image.licenses` label is
+`BSD-2-Clause AND GPL-3.0-only AND BSD-3-Clause AND MIT AND OFL-1.1`:
+
+| Licence | What |
+|---|---|
+| BSD-2-Clause | This repository: the Containerfile, the bootstrap, the health probe and endpoint, and the Caddy and PHP configuration |
+| GPL-3.0-only | Baikal itself, as upstream's `composer.json` declares it. Its files ship unchanged, and its `LICENSE`, the GPL v3 text, ships at `/var/www/baikal/LICENSE` |
+| BSD-3-Clause | sabre/dav, sabre/event, sabre/http, sabre/uri, sabre/vobject, sabre/xml and Twig, from the `vendor/` tree Baikal's release ships, each with its `LICENSE` |
+| MIT | psr/log, the Symfony packages and Composer's autoloader in that `vendor/` tree, each with its `LICENSE`; Open Iconic's CSS, which sabre/dav ships for its browser plugin in `vendor/sabre/dav/lib/DAV/Browser/assets/openiconic/`, with its `ICON-LICENSE`; jQuery, in `vendor/`; jQuery, Bootstrap and Font Awesome's CSS under `html/res/` and `Core/Resources/Web/`; and the FrankenPHP binary |
+| OFL-1.1 | Font Awesome's web fonts under `html/res/` and `Core/Resources/Web/`, and Open Iconic's fonts (`.eot`, `.otf`, `.svg`, `.ttf` and `.woff`) beside its CSS, which upstream licenses under the SIL OFL |
+
+Font Awesome's icons are under CC BY 4.0 only as SVG and JavaScript, and
+Baikal's release ships them as neither: the one `.svg` in the image is
+Open Iconic's font. PHP, Caddy and the libraries
+built into the FrankenPHP binary, and the distroless base image, are
+other projects' work, and carry their own licences.
 
 ## Licence
 

@@ -66,6 +66,15 @@ build:
 acceptance:
     ENGINE={{ ENGINE }} IMAGE={{ IMAGE }} ./test/acceptance.sh
 
+# The Go acceptance suite, which runs beside the bash one above until it
+# replaces it: app.just's acceptance line, since app.just cannot be
+# imported while this file keeps its own build and scan. It names .ci
+# where app.just has common.just's ci_dir, which is undefined until .ci
+# is checked out, and this file must parse before then for just setup.
+go-acceptance:
+    [ -x .ci/bin/divbast-testcount ] || {{ just_executable() }} ci-tools
+    set -o pipefail; ENGINE={{ ENGINE }} IMAGE={{ IMAGE }} go test -json -count=1 -timeout 90m ./test/acceptance/... | .ci/bin/divbast-testcount
+
 # Build the image, then run the acceptance suite against it
 test: build acceptance
 
@@ -80,7 +89,7 @@ scan:
 
 # Every lint gate. Needs a running Docker daemon, for docker build --check
 lint:
-    {{ just_executable() }} ci-fresh actions-check workflow-audit actionlint shell-lint reuse-lint
+    {{ just_executable() }} ci-fresh actions-check workflow-audit actionlint shell-lint go-lint go-test reuse-lint
     hadolint Containerfile
     # BuildKit's own linter
     docker build --check -f Containerfile .
