@@ -68,10 +68,12 @@ acceptance:
 
 # The Go acceptance suite, which runs beside the bash one above until it
 # replaces it: app.just's acceptance line, since app.just cannot be
-# imported while this file keeps its own build and scan
+# imported while this file keeps its own build and scan. It names .ci
+# where app.just has common.just's ci_dir, which is undefined until .ci
+# is checked out, and this file must parse before then for just setup.
 go-acceptance:
-    [ -x {{ ci_dir }}/bin/divbast-testcount ] || {{ just_executable() }} ci-tools
-    set -o pipefail; ENGINE={{ ENGINE }} IMAGE={{ IMAGE }} go test -json -count=1 -timeout 90m ./test/acceptance/... | {{ ci_dir }}/bin/divbast-testcount
+    [ -x .ci/bin/divbast-testcount ] || {{ just_executable() }} ci-tools
+    set -o pipefail; ENGINE={{ ENGINE }} IMAGE={{ IMAGE }} go test -json -count=1 -timeout 90m ./test/acceptance/... | .ci/bin/divbast-testcount
 
 # Build the image, then run the acceptance suite against it
 test: build acceptance
