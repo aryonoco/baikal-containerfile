@@ -48,9 +48,9 @@ breaking change.
 | Capabilities | **none** (`--cap-drop ALL`) |
 | Root filesystem | **read-only** |
 | User | uid/gid **65532**, never root |
-| Listen port | **8080** for DAV — never 80 |
+| Listen port | **8080** for DAV — never 80; `/healthz` there answers **404** |
 | Health port | **8081** — health only, never serves DAV, meant to stay unpublished |
-| tmpfs required | exactly one: `/tmp` |
+| tmpfs required | exactly one: `/tmp`, sized: `/tmp:size=512m` |
 | Volume required | exactly one: `/data` |
 | Outbound network | **none** |
 | Healthy | the shipped probe: `/healthz` **200** and `GET /dav.php` **exactly 401** |
@@ -94,52 +94,47 @@ breaking change.
   and a green check on a stale base proves nothing. **It merges its own
   PRs** once every check passes, with a squash, while the repository
   variable `BAIKAL_AUTOMERGE` is `enabled`; any other value stops merging from
-  the next run, and a new divbast/ci major waits for approval on the
-  Dependency Dashboard. A Baikal release arrives with
+  the next run, and a new divbast/ci major, or a raise of `go.mod`'s `go`
+  line, waits for approval on the Dependency Dashboard. A Baikal release
+  arrives with
   `BAIKAL_SHA256` already computed from the release asset, and a digest bump
   arrives as a pull request that leaves a record of what moved and
-  when, which a blind rebuild does not. Trivy cannot see FrankenPHP's own advisories — the
-  build replaces the module with a local path, so the binary records no
-  version for it to match — which makes the builder-digest PR the only way
+  when, which a blind rebuild does not. Trivy cannot see FrankenPHP's own
+  advisories — divbast/frankenphp's build replaces the module with a local
+  path, so the binary records no version for it to match — which makes the
+  PR moving the `ghcr.io/divbast/frankenphp:baikal` digest the only way
   their fixes reach the image. **A merge never publishes.** CI's daily run
   is the publishing slot: it publishes main when main moved since the commit
   the published `:latest` was built from, so users see at most one new image
   a day, and a manual run of `build` publishes at once for an urgent fix.
-  Neither ever moves `:latest` backwards (`test/publish-decision.sh`): after
-  a Baikal release, an older image refuses a `/data` the newer one migrated.
-  The daily run also catches upstream breakage early — a release URL that
-  moved, a builder that changed behaviour — and a new advisory against what
-  is already shipped surfaces there as a code scanning alert, not a red run.
+  Neither ever moves `:latest` backwards (divbast/ci's `app-publish.yml`,
+  through `divbast-publish-decision`): after a Baikal release, an older
+  image refuses a `/data` the newer one migrated. The daily run also
+  catches upstream breakage early — a release URL that moved, an archive
+  that no longer matches its checksum — and a new advisory against what is
+  already shipped surfaces there as a code scanning alert, not a red run.
   `.github/workflows/stall.yml`, through divbast/ci's `stall.yml`, fails
   each day that updates have stopped flowing: a Renovate PR stuck,
   Renovate silent, or two slots lost in a row
-- **PHP, Caddy, its plugins and spc are pinned in the Containerfile**, not
-  resolved at build time. Left alone, `build-static.sh` asks php.net for the
-  newest PHP 8.5 and xcaddy asks the Go proxy for the newest Caddy and
-  plugins, so two builds of one commit shipped different binaries.
-  `PHP_VERSION`, `CADDY_VERSION` and the three plugin ARGs fix them; Renovate
-  moves the builder digest, Caddy and the plugins together as one
-  `frankenphp` group; and `test/pinned-versions.sh` fails the build if the
-  binary's own build info disagrees with any pin, because minimum version
-  selection lifts a module above its pin without a word. **spc is pinned by
-  commit.** Left alone, `build-static.sh` downloads a nightly `spc` from
-  dl.static-php.dev on every build, with no checksum, and spc decides how PHP
-  and its libraries are fetched and built. The stage instead fetches
-  static-php-cli at `SPC_COMMIT`, installs it from that commit's own lock file
-  and puts a wrapper at `dist/spc`, which `build-static.sh` runs in place of
-  the download; `test/pinned-spc.sh` fails the build if anything else ran
-  `spc craft`. Its v3 branch has no tags, so Renovate follows the branch head
-  by digest, in a PR of its own and at most once a day: the branch moves up
-  to 13 times a day, and its schedule in `renovate.json` holds the daily run.
-  A builder that needs a newer spc goes red until that PR lands. **What spc
-  downloads is still chosen at build time:** several
-  libraries, openssl and zlib among them, come from the newest GitHub release
-  that matches, so the pin fixes how the binary is built but not every
-  source that goes into it
+- **The FrankenPHP binary comes from `ghcr.io/divbast/frankenphp:baikal`,
+  and from nowhere else.** The Containerfile copies it in with one
+  `COPY --from=`, by tag and digest, and app-check's build job runs
+  `divbast-verify-frankenphp` before it builds anything, so only a digest
+  that divbast/frankenphp's own build on its `main` attested reaches the
+  image. How the binary is made lives in
+  [divbast/frankenphp](https://github.com/divbast/frankenphp): the builder
+  image, PHP, Caddy, its plugins, xcaddy and static-php-cli are pinned
+  there; its build fails if the binary's build info disagrees with a pin or
+  its extensions differ from Baikal's list; and it records the C libraries
+  static-php-cli still takes at their newest release. Any change there
+  reaches this image only through a PR that moves the `:baikal` digest,
+  which Renovate opens. A local `just build` does not verify the
+  attestation
 - **The binary must never carry a file capability.** The official FrankenPHP build
   carries `cap_net_bind_service=ep`, and a binary with a file capability cannot be
   exec'd at all under `--cap-drop ALL` — it dies with `Operation not permitted`
-  and exit 126 before PHP starts
+  and exit 126 before PHP starts. divbast/frankenphp's build refuses one, and
+  the acceptance suite's contract checks fail on one
 - **Never serve the `302 → /admin/install/` state.** On version drift the
   container runs Baikal's own upgrade or refuses to start. Serving it is a
   total CalDAV outage that every client reports as an auth or sync failure
@@ -156,17 +151,23 @@ breaking change.
 
 - **divbast/ci.** `just setup` checks it out into `.ci/`, which git and
   the build context both ignore, at the one commit every workflow calls it
-  at: a release's full SHA, with its tag as the comment. `renovate.yml` and
-  `stall.yml` here call its reusable workflows of the same names and keep
-  their own triggers. The justfile imports `.ci/just/common.just` for the
-  lint recipes and `_github-token`, and runs them from a recipe's body,
-  never as a dependency, so it still parses before `.ci` exists. A change
-  to ci reaches this repository only through the Renovate PR that moves
-  every pin of it at once, and `just setup` refuses workflows that call ci
-  at more than one commit
+  at: a release's full SHA, with its tag as the comment. `build.yml` calls
+  its `app-check.yml` on every event, and its `app-publish.yml` from the
+  daily slot and the button; `renovate.yml` and `stall.yml` call its
+  reusable workflows of the same names. Each keeps its own triggers. The
+  justfile imports `.ci/just/common.just` for the lint recipes and
+  `_github-token`, and `.ci/just/app.just` for `build`, `acceptance`,
+  `test`, `archive`, `scan` and `app-lint`, and runs them from a recipe's
+  body, never as a dependency, so it still parses before `.ci` exists. The
+  acceptance suite imports ci's `harness` and `contract` from `.ci`,
+  through `go.mod`'s replace. A change to ci reaches this repository only
+  through the Renovate PR that moves every pin of it at once, and
+  `just setup` refuses workflows that call ci at more than one commit
+- **divbast/frankenphp** builds the FrankenPHP binary, as above
 - **divbast/renovate-config** holds the presets `renovate.json` extends.
-  `renovate.json` keeps Baikal's release manager and the FrankenPHP build's
-  pins, with the rules that go with them
+  `renovate.json` adds only Baikal's release manager, with the rules that
+  go with it, and ignores `ghcr.io/divbast/baikal`: the acceptance suite
+  pins two published images by digest as history, and they never move
 - **divbast/infra** manages the `renovate` environment, the App's client ID
   and private key in it, the `BAIKAL_AUTOMERGE` kill switch, which it
   creates and then never sets again, and this repository's rulesets. The
@@ -179,45 +180,49 @@ breaking change.
   pin, then install the pinned toolchain and PHPStan. One command on a
   fresh clone, and again whenever the pin moves; `just lint` fails, naming
   it, when `.ci` is not at the pinned commit (`ci-fresh`)
-- `just build` — build the image locally. Needs `GITHUB_TOKEN`, below
-- `just test` — build, then run the acceptance suite against it
+- `just build` — build the image locally. Needs no token. Unlike CI, it
+  does not verify the FrankenPHP binary's attestation
+- `just test` — build, then run the Go acceptance suite against it, through
+  `divbast-testcount`, which fails a run in which any test skipped
 - `just lint` — from common.just, `ci-fresh`, pinact, zizmor, actionlint,
-  ShellCheck and shfmt, and `reuse lint`; then hadolint,
-  `docker build --check` and PHPStan
-- `just scan` — Trivy over the image archive `just archive` writes and over
-  the published `:latest`, failing only on what the archive would add. Needs
-  network access to ghcr.io
+  ShellCheck and shfmt, the Go gates and `reuse lint`; from app.just,
+  hadolint and `docker build --check`; then PHPStan
+- `just scan` — ci's `divbast-scan` over the image archive `just archive`
+  writes and over the published `:latest`, failing only on what the archive
+  would add. Needs network access to ghcr.io, and `skopeo` on PATH
 - `just actions-pin`, `just actions-update` — move the workflows' action pins
 - `just ci` — every gate, locally. Run this before committing
 
 ## Where the toolchain comes from
 
-- **`mise.toml` is where tool versions are written.** Go, hadolint,
-  ShellCheck, shfmt, actionlint, reuse, just, jq, pinact, trivy and zizmor
-  are all listed there. Every justfile recipe but `setup`, which installs
+- **`mise.toml` is where tool versions are written.** Go, golangci-lint,
+  hadolint, ShellCheck, shfmt, actionlint, reuse, just, pinact, trivy and
+  zizmor are all listed there. Every justfile recipe but `setup`, which installs
   them, and `ci-checkout`, which runs before them, goes through `mise
   exec`, so a recipe resolves those binaries and not a same-named one on
   PATH
 - **The GitHub token is `GITHUB_TOKEN` and nothing else.** The recipes that
-  call GitHub, common.just's pinact and zizmor recipes and `build`, for
-  spc's API calls, first run common.just's `_github-token`, which refuses
+  call GitHub, common.just's pinact and zizmor recipes, first run
+  common.just's `_github-token`, which refuses
   anything but a fine-grained personal access token (`github_pat_`) locally
   or CI's job token (`ghs_`), naming the kind and never the token. No
   recipe calls `gh`. Pass the token per command and never export it: see
   the Local GitHub token section of divbast/ci's README
-- **Go is here for divbast/ci's tools**, which `ci-fresh` builds before it
-  checks `.ci`; this repository has no Go code of its own.
-  `GOTOOLCHAIN=local` keeps it the pinned Go, never one ci's `go.mod` would
-  download. `GOFLAGS=-mod=readonly`, because Composer's `vendor/` sits at
-  the root, where Go would take it for a Go vendor directory once a
-  `go.mod` here has a `require`
+- **Go is here for the acceptance suite, the upgrade guard's test and
+  divbast/ci's tools.** `test/acceptance` is the acceptance suite, on ci's
+  harness and contract; `test/upstreamupgrade` runs
+  `test/upstream-upgrade-api.sh` over fixtures; and the shared recipes
+  build ci's tools from `.ci`. `GOTOOLCHAIN=local` keeps it the pinned Go,
+  never one a `go.mod` would download. `GOFLAGS=-mod=readonly`, because
+  Composer's `vendor/` sits at the root, where Go would take it for a Go
+  vendor directory, since `go.mod` here has a `require`
 - **`just lint` needs a running Docker daemon**, for `docker build --check`.
   `--check` is a buildx flag with no podman equivalent, so this one gate does
   not honour `ENGINE` and does not run without dockerd
 - **PHP is a deliberate exception.** `php` and
   `composer` come from the host, not from mise: mise's only PHP backend
   compiles PHP from source, which is minutes added to every CI run in order to
-  analyse two files. PHPStan is therefore pinned by `composer.lock`, and
+  analyse a few files. PHPStan is therefore pinned by `composer.lock`, and
   `phpstan.neon` sets `phpVersion` so the *analysis target* is fixed no matter
   which PHP runs the analyser
 - **So this repository now carries `composer.json`, `composer.lock` and a
@@ -253,34 +258,30 @@ breaking change.
   upstream's own `upgrade()` headless — `upgradeDatabase()` in
   `baikal-bootstrap` reaches the protected method through a subclass — and
   refuses to start if it throws, or if `configured_version` did not move.
-  `test/upstream-upgrade-api.sh` fails the build if the members it relies on
-  change. The acceptance suite upgrades a volume made by the last 0.12.1
-  image published before the move to divbast, and compares every table with
-  a fresh install's, so a migration that silently did not run fails CI
-  rather than shipping
+  `test/upstream-upgrade-api.sh` fails the build, in the fetch stage, if
+  the members it relies on change, and `test/upstreamupgrade` sees every
+  way it can fail. The acceptance suite upgrades a volume made by the last
+  0.12.1 image published before the move to divbast, and compares every
+  table with a fresh install's, so a migration that silently did not run
+  fails CI rather than shipping. It also serves a volume made by the last
+  image published before the move onto divbast/ci, with its data intact
 
 ## Code quality
 
 - All linter gates are enforced as errors — fix them, don't suppress them. Any
   suppression, anywhere, needs an explicit, comment-level justification beside
   it to be accepted
-- **The scan blocks only what a change would add.** `test/scan.sh` scans the
-  candidate and the published `:latest` for the same arch from one Trivy
-  database, and fails only on a HIGH or CRITICAL finding, the same
-  vulnerability in the same package, that the published image lacks. No
-  release can make an advisory against something already shipped any worse,
-  so blocking on one only holds back whatever else the release fixes. It is
-  reported instead: on the run's summary page and, from main and the daily
-  run, as a code scanning alert. With nothing published, every finding counts
-  as new; a registry that cannot be reached fails the scan rather than
-  waving it through
-- **`baikal.openvex.json` is a reachability claim, not a suppression list.** Each
-  statement names one advisory and the exact component version it was argued
-  against, so a FrankenPHP bump that moves that component makes the finding
-  reappear, and as new, since the published image still matches the
-  statement. Re-argue it then;
-  widening a statement to cover the new version without doing so is a lie the
-  scanner cannot catch
+- **The scan blocks only what a change would add.** `just scan`, ci's
+  `divbast-scan`, scans the candidate and the published `:latest` for the
+  same arch from one Trivy database, and fails only on a HIGH or CRITICAL
+  finding, the same vulnerability in the same package, that the published
+  image lacks. No release can make an advisory against something already
+  shipped any worse, so blocking on one only holds back whatever else the
+  release fixes. It is reported instead: on the run's summary page and,
+  from main and the daily run, as a code scanning alert. When the published
+  image is absent or private, every finding is advisory, with a warning; a
+  public image the registry refuses, or a registry that cannot be reached,
+  fails the scan rather than waving it through
 - REUSE-compliant SPDX headers on every file; licence is **BSD-2-Clause**
 - The acceptance suite runs the image under the *exact* confinement the contract
   claims, so a check can never pass under looser settings than we ship. What CI
