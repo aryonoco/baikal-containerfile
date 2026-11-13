@@ -263,11 +263,12 @@ The image's `org.opencontainers.image.licenses` label is
 | BSD-2-Clause | This repository: the Containerfile, the bootstrap, the health probe and endpoint, and the Caddy and PHP configuration |
 | GPL-3.0-only | Baikal itself, as upstream's `composer.json` declares it. Its files ship unchanged, and its `LICENSE`, the GPL v3 text, ships at `/var/www/baikal/LICENSE` |
 | BSD-3-Clause | sabre/dav, sabre/event, sabre/http, sabre/uri, sabre/vobject, sabre/xml and Twig, from the `vendor/` tree Baikal's release ships, each with its `LICENSE` |
-| MIT | psr/log, the Symfony packages and Composer's autoloader in that `vendor/` tree, each with its `LICENSE`; jQuery, in `vendor/` and under `html/res/`; Bootstrap and Font Awesome's CSS under `html/res/`; and the FrankenPHP binary |
-| OFL-1.1 | Font Awesome's web fonts under `html/res/core/FontAwesome/webfonts/` |
+| MIT | psr/log, the Symfony packages and Composer's autoloader in that `vendor/` tree, each with its `LICENSE`; Open Iconic's CSS, which sabre/dav ships for its browser plugin in `vendor/sabre/dav/lib/DAV/Browser/assets/openiconic/`, with its `ICON-LICENSE`; jQuery, in `vendor/`; jQuery, Bootstrap and Font Awesome's CSS under `html/res/` and `Core/Resources/Web/`; and the FrankenPHP binary |
+| OFL-1.1 | Font Awesome's web fonts under `html/res/` and `Core/Resources/Web/`, and Open Iconic's fonts (`.eot`, `.otf`, `.svg`, `.ttf` and `.woff`) beside its CSS, which upstream licenses under the SIL OFL |
 
 Font Awesome's icons are under CC BY 4.0 only as SVG and JavaScript, and
-Baikal's release ships them as neither. PHP, Caddy and the libraries
+Baikal's release ships them as neither: the one `.svg` in the image is
+Open Iconic's font. PHP, Caddy and the libraries
 built into the FrankenPHP binary, and the distroless base image, are
 other projects' work, and carry their own licences.
 
