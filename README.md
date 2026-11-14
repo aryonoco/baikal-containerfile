@@ -31,6 +31,8 @@ the image, and the binary in it, yourself.
 | tmpfs required | `/tmp`, sized `512m` |
 | Volume required | `/data` |
 | Request body | 64 MB at most; a larger one gets 413 |
+| PHP URL streams | off (`allow_url_fopen = Off`): `fopen()` refuses an `http://` or `ftp://` URL |
+| `X-Powered-By` header | none (`expose_php = Off`): responses do not name PHP or its version |
 | Shell in image | none |
 | Package manager | none |
 | Outbound network | none |
@@ -342,10 +344,10 @@ never reaches an image built here.
 
 ## Building it yourself
 
-With [mise](https://mise.jdx.dev/), Composer and Docker: `just setup` checks
-divbast/ci out into `.ci/` at the commit the workflows pin and installs the
-toolchain, and `just ci` runs every gate, the image build included. The
-build itself needs no token, and, unlike CI, does not verify the FrankenPHP
+With [mise](https://mise.jdx.dev/), PHP 8.5 with Composer, and Docker:
+`just setup` checks divbast/ci out into `.ci/` at the commit the workflows
+pin and installs the toolchain, and `just ci` runs every gate, the image
+build included. The build itself needs no token, and, unlike CI, does not verify the FrankenPHP
 binary's attestation: it builds from whatever digest the Containerfile
 names. `just scan` reads the published image with
 [skopeo](https://github.com/containers/skopeo), which must be on `PATH`.
