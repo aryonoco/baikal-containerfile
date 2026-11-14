@@ -25,7 +25,7 @@ concurrency:
 jobs:
   stall:
     name: stall
-    uses: divbast/ci/.github/workflows/stall.yml@0a62aa8cfe2c68a0a44343d7a7693a68c06c2b3b # v2.0.0
+    uses: divbast/ci/.github/workflows/stall.yml@95cd722728b6dec15c469e2b87796a32e41a28b5 # v2.4.0
     with:
       published: ghcr.io/divbast/baikal:latest
       slot-workflow: build.yml
