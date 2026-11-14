@@ -119,9 +119,9 @@ breaking change.
 - **The FrankenPHP binary comes from `ghcr.io/divbast/frankenphp:baikal`,
   and from nowhere else.** The Containerfile copies it in with one
   `COPY --from=`, by tag and digest, and app-check's build job runs
-  `divbast-verify-frankenphp` before it builds anything, so only a digest
-  that divbast/frankenphp's own build on its `main` attested reaches the
-  image. How the binary is made lives in
+  `divbast-verify-frankenphp` before it builds anything, and verifies that
+  the digest the `COPY --from=` names was attested by divbast/frankenphp's
+  own build on its `main`. How the binary is made lives in
   [divbast/frankenphp](https://github.com/divbast/frankenphp): the builder
   image, PHP, Caddy, its plugins, xcaddy and static-php-cli are pinned
   there; its build fails if the binary's build info disagrees with a pin or
@@ -201,10 +201,12 @@ breaking change.
 
 - **`mise.toml` is where tool versions are written.** Go, golangci-lint,
   hadolint, ShellCheck, shfmt, actionlint, reuse, just, pinact, trivy and
-  zizmor are all listed there. Every justfile recipe but `setup`, which installs
-  them, and `ci-checkout`, which runs before them, goes through `mise
-  exec`, so a recipe resolves those binaries and not a same-named one on
-  PATH
+  zizmor are all listed there. Every justfile recipe that runs one of them goes
+  through `mise exec`, so a recipe resolves those binaries and not a
+  same-named one on PATH. The exceptions run none: `setup`, which installs
+  them, `ci-checkout`, which runs before them, and `ci-fresh` and
+  `_github-token`, which call only git, just and the freshly built
+  `divbast-pin`
 - **The GitHub token is `GITHUB_TOKEN` and nothing else.** The recipes that
   call GitHub, common.just's pinact and zizmor recipes, first run
   common.just's `_github-token`, which refuses
